@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database import engine
 from app.models import Base
-from app.routers import auth, clinical
+from app.routers import auth, clinical, admin
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -30,6 +30,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router, prefix=settings.api_v1_prefix)
 app.include_router(clinical.router, prefix=settings.api_v1_prefix)
+app.include_router(admin.router, prefix=settings.api_v1_prefix)
 
 @app.get("/")
 async def root():

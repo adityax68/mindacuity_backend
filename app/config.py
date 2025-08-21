@@ -1,21 +1,23 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
+import os
 
 class Settings(BaseSettings):
-    # Database settings - Updated for better Neon connection stability
-    database_url: str = "postgresql://neondb_owner:npg_WlCV5sp4qwOe@ep-morning-dream-adq6ukxb-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require"
+    # Database settings - Now using environment variables
+    database_url: str = os.getenv("DATABASE_URL", "postgresql://localhost/health_app")
     
-    # JWT settings
-    secret_key: str = "your-secret-key-change-this-in-production"
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+    # JWT settings - Now using environment variables
+    secret_key: str = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
+    algorithm: str = os.getenv("ALGORITHM", "HS256")
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
     
-    # API settings
-    api_v1_prefix: str = "/api/v1"
-    project_name: str = "Health App - Mental Health Detection API"
-    debug: bool = False
+    # API settings - Now using environment variables
+    api_v1_prefix: str = os.getenv("API_V1_PREFIX", "/api/v1")
+    project_name: str = os.getenv("PROJECT_NAME", "Health App - Mental Health Detection API")
+    debug: bool = os.getenv("DEBUG", "False").lower() == "true"
     
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
 
 settings = Settings() 

@@ -32,7 +32,8 @@ class UserCRUD:
             email=user.email,
             username=user.username,
             full_name=user.full_name,
-            hashed_password=hashed_password
+            hashed_password=hashed_password,
+            role=getattr(user, 'role', 'user')  # NEW: Add role field with default
         )
         db.add(db_user)
         db.commit()

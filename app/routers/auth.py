@@ -4,10 +4,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError, IntegrityError
 from datetime import timedelta
 from app.database import get_db
-from app.auth import verify_password, create_access_token, get_current_active_user
+from app.auth import verify_password, create_access_token, get_current_active_user, get_user_info
 from app.crud import UserCRUD
 from app.schemas import UserCreate, User, Token
 from app.config import settings
+from app.services.role_service import RoleService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     - **username**: User's username (must be unique)
     - **password**: User's password (will be hashed)
     - **full_name**: User's full name (optional)
+    - **role**: User's role (defaults to "user")
     """
     try:
         logger.info(f"Attempting to create user with email: {user.email}")
@@ -74,7 +76,7 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         )
 
 @router.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """
     Authenticate user and return access token.
     
@@ -112,7 +114,23 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             data={"sub": user.email}, expires_delta=access_token_expires
         )
         
-        return {"access_token": access_token, "token_type": "bearer", "user": user}
+        # Get user privileges
+        role_service = RoleService(db)
+        privileges = await role_service.get_user_privileges(user.id)
+        
+        # Create user response with privileges
+        user_response = User(
+            id=user.id,
+            email=user.email,
+            username=user.username,
+            full_name=user.full_name,
+            role=user.role,
+            privileges=list(privileges),
+            is_active=user.is_active,
+            created_at=user.created_at
+        )
+        
+        return {"access_token": access_token, "token_type": "bearer", "user": user_response}
     
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
@@ -133,9 +151,23 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         )
 
 @router.get("/me", response_model=User)
-def read_users_me(current_user: User = Depends(get_current_active_user)):
+async def read_users_me(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """
-    Get current user information.
+    Get current user information with privileges.
     Requires authentication.
     """
-    return current_user 
+    # Get user privileges
+    role_service = RoleService(db)
+    privileges = await role_service.get_user_privileges(current_user.id)
+    
+    # Return user with privileges
+    return User(
+        id=current_user.id,
+        email=current_user.email,
+        username=current_user.username,
+        full_name=current_user.full_name,
+        role=current_user.role,
+        privileges=list(privileges),
+        is_active=current_user.is_active,
+        created_at=current_user.created_at
+    ) 

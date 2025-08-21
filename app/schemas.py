@@ -11,6 +11,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    role: Optional[str] = "user"  # NEW: Add role field
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -18,11 +19,57 @@ class UserLogin(BaseModel):
 
 class User(UserBase):
     id: int
+    role: str  # NEW: Add role field
+    privileges: List[str]  # NEW: Add privileges
     is_active: bool
     created_at: datetime
     
     class Config:
         from_attributes = True
+
+# NEW: UserResponse for admin endpoints
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    username: str
+    full_name: Optional[str]
+    role: str
+    privileges: List[str]
+    is_active: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# NEW: Role schemas
+class RoleCreate(BaseModel):
+    name: str
+    description: str
+
+class RoleResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    is_active: bool
+    privileges: List[str]
+    
+    class Config:
+        from_attributes = True
+
+# NEW: Privilege schemas
+class PrivilegeResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    category: str
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+# NEW: User role update
+class UserRoleUpdate(BaseModel):
+    role: str
 
 class Token(BaseModel):
     access_token: str
@@ -31,8 +78,6 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     email: Optional[str] = None
-
-
 
 # Clinical Assessment schemas
 class ClinicalAssessmentRequest(BaseModel):
