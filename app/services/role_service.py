@@ -1,10 +1,11 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.models import User, Role, Privilege, user_privileges, role_privileges
 from typing import List, Set
 from fastapi import HTTPException
 
 class RoleService:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
     async def initialize_default_roles_and_privileges(self):
@@ -33,25 +34,28 @@ class RoleService:
         
         # Create privileges if they don't exist
         for priv_data in default_privileges:
-            existing_priv = self.db.query(Privilege).filter(Privilege.name == priv_data["name"]).first()
+            result = await self.db.execute(select(Privilege).where(Privilege.name == priv_data["name"]))
+            existing_priv = result.scalar_one_or_none()
             if not existing_priv:
                 privilege = Privilege(**priv_data)
                 self.db.add(privilege)
         
-        self.db.commit()
+        await self.db.commit()
         
         # Create default roles
-        user_role = self.db.query(Role).filter(Role.name == "user").first()
+        result = await self.db.execute(select(Role).where(Role.name == "user"))
+        user_role = result.scalar_one_or_none()
         if not user_role:
             user_role = Role(name="user", description="Regular user with basic access")
             self.db.add(user_role)
         
-        admin_role = self.db.query(Role).filter(Role.name == "admin").first()
+        result = await self.db.execute(select(Role).where(Role.name == "admin"))
+        admin_role = result.scalar_one_or_none()
         if not admin_role:
             admin_role = Role(name="admin", description="Administrator with full access")
             self.db.add(admin_role)
         
-        self.db.commit()
+        await self.db.commit()
         
         # Assign privileges to roles
         await self.assign_privileges_to_role("user", [
@@ -59,12 +63,14 @@ class RoleService:
         ])
         
         # Admin gets all privileges
-        all_privileges = self.db.query(Privilege).filter(Privilege.is_active == True).all()
+        result = await self.db.execute(select(Privilege).where(Privilege.is_active == True))
+        all_privileges = result.scalars().all()
         await self.assign_privileges_to_role("admin", [priv.name for priv in all_privileges])
     
     async def assign_privileges_to_role(self, role_name: str, privilege_names: List[str]):
         """Assign privileges to a role"""
-        role = self.db.query(Role).filter(Role.name == role_name).first()
+        result = await self.db.execute(select(Role).where(Role.name == role_name))
+        role = result.scalar_one_or_none()
         if not role:
             raise ValueError(f"Role {role_name} not found")
         
@@ -73,22 +79,25 @@ class RoleService:
         
         # Add new privileges
         for priv_name in privilege_names:
-            privilege = self.db.query(Privilege).filter(Privilege.name == priv_name).first()
+            result = await self.db.execute(select(Privilege).where(Privilege.name == priv_name))
+            privilege = result.scalar_one_or_none()
             if privilege:
                 role.privileges.append(privilege)
         
-        self.db.commit()
+        await self.db.commit()
     
     async def get_user_privileges(self, user_id: int) -> Set[str]:
         """Get all privileges for a user"""
-        user = self.db.query(User).filter(User.id == user_id).first()
+        result = await self.db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
         if not user:
             return set()
         
         # Get role-based privileges
         role_privileges = set()
         if user.role:
-            role = self.db.query(Role).filter(Role.name == user.role).first()
+            result = await self.db.execute(select(Role).where(Role.name == user.role))
+            role = result.scalar_one_or_none()
             if role:
                 role_privileges = {priv.name for priv in role.privileges}
         

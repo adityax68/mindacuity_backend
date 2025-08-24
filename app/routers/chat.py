@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from app.database import get_db
-from app.auth import get_current_user
+from app.auth import get_current_user, UnifiedUser
 from app.models import User
 from app.schemas import ChatMessageRequest, ChatResponse, ChatConversationResponse
 from app.services.chat_service import ChatService
@@ -23,8 +23,8 @@ def get_chat_service() -> ChatService:
 @router.post("/send", response_model=ChatResponse)
 async def send_message(
     chat_request: ChatMessageRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UnifiedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """Send a chat message and get AI response"""
@@ -35,10 +35,14 @@ async def send_message(
                 detail="Message cannot be empty"
             )
         
+        # Convert UnifiedUser to user_id for chat service
+        # For regular users, id is int; for orgs/employees, id is str (UUID)
+        user_id = current_user.id if isinstance(current_user.id, int) else int(current_user.id, 16) % 1000000
+        
         # Process the chat message
         response = await chat_service.process_chat_message(
             db=db,
-            user_id=current_user.id,
+            user_id=user_id,
             chat_request=chat_request
         )
         
@@ -58,13 +62,16 @@ async def send_message(
 
 @router.get("/conversations", response_model=List[ChatConversationResponse])
 async def get_conversations(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UnifiedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """Get all conversations for the current user"""
     try:
-        conversations = chat_service.get_user_conversations(db, current_user.id)
+        # Convert UnifiedUser to user_id for chat service
+        user_id = current_user.id if isinstance(current_user.id, int) else int(current_user.id, 16) % 1000000
+        
+        conversations = await chat_service.get_user_conversations(db, user_id)
         return conversations
     except Exception as e:
         raise HTTPException(
@@ -75,13 +82,16 @@ async def get_conversations(
 @router.get("/conversations/{conversation_id}/messages")
 async def get_conversation_messages(
     conversation_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UnifiedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """Get all messages for a specific conversation"""
     try:
-        messages = chat_service.get_conversation_messages(db, conversation_id, current_user.id)
+        # Convert UnifiedUser to user_id for chat service
+        user_id = current_user.id if isinstance(current_user.id, int) else int(current_user.id, 16) % 1000000
+        
+        messages = await chat_service.get_conversation_messages(db, conversation_id, user_id)
         return {
             "conversation_id": conversation_id,
             "messages": [
@@ -108,17 +118,22 @@ async def get_conversation_messages(
 @router.delete("/conversations/{conversation_id}")
 async def delete_conversation(
     conversation_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UnifiedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """Delete a conversation and all its messages"""
     try:
         # Verify user owns this conversation
         from app.models import ChatConversation
-        conversation = db.query(ChatConversation).filter(
-            ChatConversation.id == conversation_id,
-            ChatConversation.user_id == current_user.id
-        ).first()
+        from sqlalchemy import select
+        
+        result = await db.execute(
+            select(ChatConversation).where(
+                ChatConversation.id == conversation_id,
+                ChatConversation.user_id == (current_user.id if isinstance(current_user.id, int) else int(current_user.id, 16) % 1000000)
+            )
+        )
+        conversation = result.scalar_one_or_none()
         
         if not conversation:
             raise HTTPException(
@@ -127,13 +142,13 @@ async def delete_conversation(
             )
         
         # Delete conversation (messages will be deleted due to cascade)
-        db.delete(conversation)
-        db.commit()
+        await db.delete(conversation)
+        await db.commit()
         
         return {"message": "Conversation deleted successfully"}
         
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete conversation: {str(e)}"
@@ -141,7 +156,7 @@ async def delete_conversation(
 
 @router.get("/health")
 async def chat_health_check(
-    current_user: User = Depends(get_current_user),
+    current_user: UnifiedUser = Depends(get_current_user),
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """Health check for chat service"""

@@ -1,173 +1,253 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import OperationalError, IntegrityError
-from datetime import timedelta
+from fastapi import APIRouter, Depends, HTTPException, status, Form
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
+from typing import Union
+import uuid
+
 from app.database import get_db
-from app.auth import verify_password, create_access_token, get_current_active_user, get_user_info
-from app.crud import UserCRUD
-from app.schemas import UserCreate, User, Token
+from app.models import Organization, Employee
+from app.schemas import (
+    OrganizationCreate, OrganizationResponse, EmployeeCreate, EmployeeResponse,
+    TokenResponse, OrganizationLogin, EmployeeLogin
+)
 from app.config import settings
-from app.services.role_service import RoleService
-import logging
 
-logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
-router = APIRouter(prefix="/auth", tags=["authentication"])
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-@router.post("/signup", response_model=User, status_code=status.HTTP_201_CREATED)
-def signup(user: UserCreate, db: Session = Depends(get_db)):
-    """
-    Create a new user account.
+# JWT token handling
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
     
-    - **email**: User's email address (must be unique)
-    - **username**: User's username (must be unique)
-    - **password**: User's password (will be hashed)
-    - **full_name**: User's full name (optional)
-    - **role**: User's role (defaults to "user")
-    """
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+    return encoded_jwt
+
+async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
     try:
-        logger.info(f"Attempting to create user with email: {user.email}")
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        user_id: str = payload.get("sub")
+        user_type: str = payload.get("user_type")
         
-        # Check if user with email already exists
-        db_user = UserCRUD.get_user_by_email(db, email=user.email)
-        if db_user:
-            logger.info(f"Email already registered: {user.email}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
-        
-        # Check if username already exists
-        db_user = UserCRUD.get_user_by_username(db, username=user.username)
-        if db_user:
-            logger.info(f"Username already taken: {user.username}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already taken"
-            )
-        
-        # Create new user
-        logger.info(f"Creating new user: {user.email}")
-        new_user = UserCRUD.create_user(db=db, user=user)
-        logger.info(f"Successfully created user with ID: {new_user.id}")
-        return new_user
+        if user_id is None or user_type is None:
+            raise credentials_exception
+            
+    except JWTError:
+        raise credentials_exception
     
-    except HTTPException:
-        # Re-raise HTTP exceptions as they are already properly formatted
-        raise
-    except OperationalError as e:
-        logger.error(f"Database connection error during signup: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection error. Please try again in a moment."
-        )
-    except IntegrityError as e:
-        logger.error(f"Database integrity error during signup: {e}")
+    if user_type == "organization_hr":
+        result = await db.execute(select(Organization).where(Organization.id == uuid.UUID(user_id)))
+        user = result.scalar_one_or_none()
+    elif user_type == "employee":
+        result = await db.execute(select(Employee).where(Employee.id == uuid.UUID(user_id)))
+        user = result.scalar_one_or_none()
+    else:
+        raise credentials_exception
+    
+    if user is None:
+        raise credentials_exception
+    
+    return user
+
+# Organization Authentication Endpoints
+@router.post("/organization/signup", response_model=TokenResponse)
+async def organization_signup(org_data: OrganizationCreate, db: AsyncSession = Depends(get_db)):
+    # Check if organization already exists
+    result = await db.execute(select(Organization).where(Organization.hremail == org_data.hremail))
+    if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email or username already exists"
+            detail="Organization with this email already exists"
         )
-    except Exception as e:
-        logger.error(f"Unexpected error during signup: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred. Please try again."
-        )
-
-@router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """
-    Authenticate user and return access token.
     
-    - **username**: User's email address
-    - **password**: User's password
-    """
+    # Create new organization
+    hashed_password = get_password_hash(org_data.password)
+    db_org = Organization(
+        company_name=org_data.company_name,
+        hremail=org_data.hremail,
+        password_hash=hashed_password
+    )
+    
+    db.add(db_org)
+    await db.commit()
+    await db.refresh(db_org)
+    
+    # Create access token
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    access_token = create_access_token(
+        data={"sub": str(db_org.id), "user_type": "organization_hr"},
+        expires_delta=access_token_expires
+    )
+    
+    # Prepare response
+    user_response = OrganizationResponse(
+        id=db_org.id,
+        company_name=db_org.company_name,
+        hremail=db_org.hremail,
+        role="organization_hr"
+    )
+    
+    return TokenResponse(access_token=access_token, user=user_response)
+
+@router.post("/organization/login", response_model=TokenResponse)
+async def organization_login(
+    hremail: str = Form(...),
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    # Find organization by email
+    result = await db.execute(select(Organization).where(Organization.hremail == hremail))
+    org = result.scalar_one_or_none()
+    
+    if not org or not verify_password(password, org.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password"
+        )
+    
+    # Create access token
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    access_token = create_access_token(
+        data={"sub": str(org.id), "user_type": "organization_hr"},
+        expires_delta=access_token_expires
+    )
+    
+    # Prepare response
+    user_response = OrganizationResponse(
+        id=org.id,
+        company_name=org.company_name,
+        hremail=org.hremail,
+        role="organization_hr"
+    )
+    
+    return TokenResponse(access_token=access_token, user=user_response)
+
+# Employee Authentication Endpoints
+@router.post("/employee/signup", response_model=TokenResponse)
+async def employee_signup(emp_data: EmployeeCreate, db: AsyncSession = Depends(get_db)):
+    # Check if organization exists
+    result = await db.execute(select(Organization).where(Organization.id == emp_data.company_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Organization not found"
+        )
+    
+    # Check if employee email already exists
+    result = await db.execute(select(Employee).where(Employee.employee_email == emp_data.employee_email))
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Employee with this email already exists"
+        )
+    
+    # Create new employee
+    hashed_password = get_password_hash(emp_data.password)
+    db_emp = Employee(
+        company_id=emp_data.company_id,
+        employee_email=emp_data.employee_email,
+        password_hash=hashed_password,
+        name=emp_data.name,
+        dob=emp_data.dob,
+        phone_number=emp_data.phone_number,
+        joining_date=emp_data.joining_date or datetime.now().date()
+    )
+    
+    db.add(db_emp)
+    await db.commit()
+    await db.refresh(db_emp)
+    
+    # Create access token
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    access_token = create_access_token(
+        data={"sub": str(db_emp.id), "user_type": "employee"},
+        expires_delta=access_token_expires
+    )
+    
+    # Prepare response
+    user_response = EmployeeResponse(
+        id=db_emp.id,
+        company_id=db_emp.company_id,
+        employee_email=db_emp.employee_email,
+        name=db_emp.name,
+        role="employee"
+    )
+    
+    return TokenResponse(access_token=access_token, user=user_response)
+
+@router.post("/employee/login", response_model=TokenResponse)
+async def employee_login(
+    company_id: str = Form(...),
+    employee_email: str = Form(...),
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
     try:
-        # Find user by email (username field in OAuth2 form)
-        user = UserCRUD.get_user_by_email(db, email=form_data.username)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Verify password
-        if not verify_password(form_data.password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Check if user is active
-        if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Inactive user"
-            )
-        
-        # Create access token
-        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
-        access_token = create_access_token(
-            data={"sub": user.email}, expires_delta=access_token_expires
+        company_uuid = uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid company ID format"
         )
-        
-        # Get user privileges
-        role_service = RoleService(db)
-        privileges = await role_service.get_user_privileges(user.id)
-        
-        # Create user response with privileges
-        user_response = User(
-            id=user.id,
-            email=user.email,
-            username=user.username,
-            full_name=user.full_name,
-            role=user.role,
-            privileges=list(privileges),
-            is_active=user.is_active,
-            created_at=user.created_at
-        )
-        
-        return {"access_token": access_token, "token_type": "bearer", "user": user_response}
     
-    except HTTPException:
-        # Re-raise HTTP exceptions as they are already properly formatted
-        raise
-    except OperationalError as e:
-        logger.error(f"Database connection error during login: {e}")
-        # For database connection issues, we should still try to authenticate
-        # If we can't reach the database, we can't verify credentials, so return 503
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service temporarily unavailable. Please try again in a moment."
+    # Find employee by email and company
+    result = await db.execute(
+        select(Employee).where(
+            Employee.employee_email == employee_email,
+            Employee.company_id == company_uuid
         )
-    except Exception as e:
-        logger.error(f"Unexpected error during login: {e}")
+    )
+    emp = result.scalar_one_or_none()
+    
+    if not emp or not verify_password(password, emp.password_hash):
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred. Please try again."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect credentials"
         )
+    
+    # Create access token
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    access_token = create_access_token(
+        data={"sub": str(emp.id), "user_type": "employee"},
+        expires_delta=access_token_expires
+    )
+    
+    # Prepare response
+    user_response = EmployeeResponse(
+        id=emp.id,
+        company_id=emp.company_id,
+        employee_email=emp.employee_email,
+        name=emp.name,
+        role="employee"
+    )
+    
+    return TokenResponse(access_token=access_token, user=user_response)
 
-@router.get("/me", response_model=User)
-async def read_users_me(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):
-    """
-    Get current user information with privileges.
-    Requires authentication.
-    """
-    # Get user privileges
-    role_service = RoleService(db)
-    privileges = await role_service.get_user_privileges(current_user.id)
-    
-    # Return user with privileges
-    return User(
-        id=current_user.id,
-        email=current_user.email,
-        username=current_user.username,
-        full_name=current_user.full_name,
-        role=current_user.role,
-        privileges=list(privileges),
-        is_active=current_user.is_active,
-        created_at=current_user.created_at
-    ) 
+# Protected endpoint example
+@router.get("/me")
+async def read_users_me(current_user: Union[Organization, Employee] = Depends(get_current_user)):
+    return current_user 

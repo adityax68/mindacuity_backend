@@ -6,7 +6,8 @@ from typing import Dict, Any, Optional, List
 from openai import OpenAI
 import logging
 from cryptography.fernet import Fernet
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.models import ChatConversation, ChatMessage, RateLimit, User
 from app.schemas import ChatMessageRequest, ChatResponse
 from app.config import settings
@@ -107,17 +108,20 @@ REMEMBER: You are Acutie. Be SMART, PROACTIVE, and HELPFUL. Don't ask questions 
             logger.error(f"Failed to decrypt message: {e}")
             return "[Message could not be decrypted]"
 
-    def _check_rate_limit(self, db: Session, user_id: int) -> bool:
+    async def _check_rate_limit(self, db: AsyncSession, user_id: int) -> bool:
         """Check if user has exceeded rate limit"""
         try:
             now = datetime.utcnow()
             window_start = now - timedelta(minutes=1)
             
             # Get current rate limit record
-            rate_limit = db.query(RateLimit).filter(
-                RateLimit.user_id == user_id,
-                RateLimit.window_start >= window_start
-            ).first()
+            rate_limit = await db.execute(
+                select(RateLimit).filter(
+                    RateLimit.user_id == user_id,
+                    RateLimit.window_start >= window_start
+                )
+            )
+            rate_limit = rate_limit.scalar_one_or_none()
             
             if not rate_limit:
                 # Create new rate limit record
@@ -127,7 +131,7 @@ REMEMBER: You are Acutie. Be SMART, PROACTIVE, and HELPFUL. Don't ask questions 
                     window_start=now
                 )
                 db.add(rate_limit)
-                db.commit()
+                await db.commit()
                 return True
             
             if rate_limit.message_count >= self.max_messages_per_minute:
@@ -135,31 +139,37 @@ REMEMBER: You are Acutie. Be SMART, PROACTIVE, and HELPFUL. Don't ask questions 
             
             # Increment message count
             rate_limit.message_count += 1
-            db.commit()
+            await db.commit()
             return True
             
         except Exception as e:
             logger.error(f"Rate limit check failed: {e}")
-            # Allow message if rate limiting fails
-            return True
+            return True  # Allow message if rate limit check fails
 
-    def _get_conversation_context(self, db: Session, conversation_id: int, max_messages: int = 10) -> List[Dict[str, str]]:
+    async def _get_conversation_context(self, db: AsyncSession, conversation_id: int, max_messages: int = 10) -> List[Dict[str, str]]:
         """Get recent conversation context for OpenAI"""
         try:
-            messages = db.query(ChatMessage).filter(
-                ChatMessage.conversation_id == conversation_id
-            ).order_by(ChatMessage.created_at.desc()).limit(max_messages).all()
+            messages = await db.execute(
+                select(ChatMessage).filter(
+                    ChatMessage.conversation_id == conversation_id
+                ).order_by(ChatMessage.created_at.desc()).limit(max_messages)
+            )
+            messages = messages.scalars().all()
             
             # Reverse to get chronological order
-            messages.reverse()
+            messages = list(reversed(messages))
             
             context = []
             for msg in messages:
-                content = self._decrypt_message(msg.encrypted_content)
-                context.append({
-                    "role": msg.role,
-                    "content": content
-                })
+                try:
+                    decrypted_content = self._decrypt_message(msg.encrypted_content)
+                    context.append({
+                        "role": msg.role,
+                        "content": decrypted_content
+                    })
+                except Exception as e:
+                    logger.error(f"Failed to decrypt message {msg.id}: {e}")
+                    continue
             
             return context
             
@@ -167,13 +177,16 @@ REMEMBER: You are Acutie. Be SMART, PROACTIVE, and HELPFUL. Don't ask questions 
             logger.error(f"Failed to get conversation context: {e}")
             return []
 
-    def _create_or_get_conversation(self, db: Session, user_id: int, conversation_id: Optional[int] = None) -> ChatConversation:
+    async def _create_or_get_conversation(self, db: AsyncSession, user_id: int, conversation_id: Optional[int] = None) -> ChatConversation:
         """Create new conversation or get existing one"""
         if conversation_id:
-            conversation = db.query(ChatConversation).filter(
-                ChatConversation.id == conversation_id,
-                ChatConversation.user_id == user_id
-            ).first()
+            conversation = await db.execute(
+                select(ChatConversation).filter(
+                    ChatConversation.id == conversation_id,
+                    ChatConversation.user_id == user_id
+                )
+            )
+            conversation = conversation.scalar_one_or_none()
             
             if not conversation:
                 raise ValueError("Conversation not found or access denied")
@@ -186,81 +199,74 @@ REMEMBER: You are Acutie. Be SMART, PROACTIVE, and HELPFUL. Don't ask questions 
             title="New Chat"
         )
         db.add(conversation)
-        db.commit()
-        db.refresh(conversation)
+        await db.commit()
+        await db.refresh(conversation)
         
         return conversation
 
     def _generate_title_from_message(self, message: str) -> str:
-        """Generate a title for the conversation based on first message"""
+        """Generate a title from the first message"""
         try:
-            # Use OpenAI to generate a short, relevant title
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are Acutie. Generate a short, 3-5 word title for this conversation that reflects the emotional topic. Only return the title, nothing else."},
-                    {"role": "user", "content": message}
-                ],
-                max_tokens=20,
-                temperature=0.7
-            )
-            
-            title = response.choices[0].message.content.strip()
-            # Clean up the title
-            title = title.replace('"', '').replace("'", "")
-            if len(title) > 50:
-                title = title[:47] + "..."
-            
-            return title
-            
+            words = message.strip().split()[:3]
+            return " ".join(words) + "..." if len(words) == 3 else message[:30] + "..."
         except Exception as e:
             logger.error(f"Failed to generate title: {e}")
-            # Fallback title
-            words = message.split()[:3]
-            return " ".join(words) + "..." if len(words) == 3 else message[:30] + "..."
+            return "New Chat"
 
-    async def process_chat_message(self, db: Session, user_id: int, chat_request: ChatMessageRequest) -> ChatResponse:
+    async def process_chat_message(self, db: AsyncSession, user_id: int, chat_request: ChatMessageRequest) -> ChatResponse:
         """Process a chat message and return AI response"""
         try:
             # Check rate limit
-            if not self._check_rate_limit(db, user_id):
+            if not await self._check_rate_limit(db, user_id):
                 raise ValueError(f"Rate limit exceeded. Maximum {self.max_messages_per_minute} messages per minute.")
             
             # Get or create conversation
-            conversation = self._create_or_get_conversation(db, user_id, chat_request.conversation_id)
+            conversation = await self._create_or_get_conversation(db, user_id, chat_request.conversation_id)
             
             # Store user message
             user_message = ChatMessage(
                 conversation_id=conversation.id,
                 user_id=user_id,
                 role="user",
-                content=chat_request.message,  # Store plain text for search
+                content=chat_request.message,
                 encrypted_content=self._encrypt_message(chat_request.message)
             )
             db.add(user_message)
-            db.commit()
-            db.refresh(user_message)
+            await db.commit()
+            await db.refresh(user_message)
             
             # Generate title for new conversations
-            if not conversation.title:
+            if not conversation.title or conversation.title == "New Chat":
                 try:
                     title = self._generate_title_from_message(chat_request.message)
                     conversation.title = title
-                    db.commit()
+                    await db.commit()
                 except Exception as e:
                     logger.error(f"Failed to update conversation title: {e}")
             
             # Get conversation context
-            context = self._get_conversation_context(db, conversation.id)
+            context = await self._get_conversation_context(db, conversation.id)
             
             # Prepare messages for OpenAI
             messages = [{"role": "system", "content": self.system_prompt}]
-            messages.extend(context)
+            for ctx_msg in context:
+                messages.append({"role": ctx_msg["role"], "content": ctx_msg["content"]})
+            messages.append({"role": "user", "content": chat_request.message})
             
             # Get AI response
-            ai_response = await self._get_ai_response(messages)
+            try:
+                response = self.client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=messages,
+                    max_tokens=500,
+                    temperature=0.7
+                )
+                ai_response = response.choices[0].message.content
+            except Exception as e:
+                logger.error(f"OpenAI API error: {e}")
+                ai_response = "I'm experiencing a technical issue right now, but I want to make sure you're safe. If you're having thoughts of harming yourself, please call a crisis hotline immediately. I'm here to help once the connection is restored."
             
-            # Store AI response
+            # Store AI message
             ai_message = ChatMessage(
                 conversation_id=conversation.id,
                 user_id=user_id,
@@ -269,12 +275,12 @@ REMEMBER: You are Acutie. Be SMART, PROACTIVE, and HELPFUL. Don't ask questions 
                 encrypted_content=self._encrypt_message(ai_response)
             )
             db.add(ai_message)
-            db.commit()
-            db.refresh(ai_message)
+            await db.commit()
+            await db.refresh(ai_message)
             
             # Update conversation timestamp
             conversation.updated_at = datetime.utcnow()
-            db.commit()
+            await db.commit()
             
             return ChatResponse(
                 conversation_id=conversation.id,
@@ -286,37 +292,19 @@ REMEMBER: You are Acutie. Be SMART, PROACTIVE, and HELPFUL. Don't ask questions 
             logger.error(f"Failed to process chat message: {e}")
             raise
 
-    async def _get_ai_response(self, messages: List[Dict[str, str]]) -> str:
-        """Get response from OpenAI"""
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=messages,
-                max_tokens=500,
-                temperature=0.7
-            )
-            
-            return response.choices[0].message.content.strip()
-            
-        except Exception as e:
-            logger.error(f"OpenAI API call failed: {e}")
-            logger.error(f"Error type: {type(e).__name__}")
-            logger.error(f"Error details: {str(e)}")
-            
-            # Fallback response - more appropriate for crisis situations
-            if "rate limit" in str(e).lower() or "quota" in str(e).lower():
-                return "I'm experiencing high demand right now, but I want to make sure you're safe. If you're having thoughts of harming yourself, please call a crisis hotline immediately. I'll be back to help you soon."
-            elif "timeout" in str(e).lower():
-                return "I'm taking longer than usual to respond, but I want to make sure you're safe. If you're having thoughts of harming yourself, please call a crisis hotline immediately. I'm here to help once the connection is restored."
-            else:
-                return "I'm experiencing a technical issue right now, but I want to make sure you're safe. If you're having thoughts of harming yourself, please call a crisis hotline immediately. I'm here to help once the connection is restored."
-
-    def get_user_conversations(self, db: Session, user_id: int) -> List[ChatConversation]:
+    async def get_user_conversations(self, db: AsyncSession, user_id: int) -> List[ChatConversation]:
         """Get all conversations for a user"""
         try:
-            conversations = db.query(ChatConversation).filter(
-                ChatConversation.user_id == user_id
-            ).order_by(ChatConversation.updated_at.desc()).all()
+            result = await db.execute(
+                select(ChatConversation).filter(
+                    ChatConversation.user_id == user_id
+                ).order_by(ChatConversation.updated_at.desc())
+            )
+            conversations = result.scalars().all()
+            
+            # Load messages for each conversation
+            for conversation in conversations:
+                await db.refresh(conversation, attribute_names=['messages'])
             
             return conversations
             
@@ -324,25 +312,35 @@ REMEMBER: You are Acutie. Be SMART, PROACTIVE, and HELPFUL. Don't ask questions 
             logger.error(f"Failed to get user conversations: {e}")
             return []
 
-    def get_conversation_messages(self, db: Session, conversation_id: int, user_id: int) -> List[ChatMessage]:
+    async def get_conversation_messages(self, db: AsyncSession, conversation_id: int, user_id: int) -> List[ChatMessage]:
         """Get all messages for a conversation"""
         try:
             # Verify user owns this conversation
-            conversation = db.query(ChatConversation).filter(
-                ChatConversation.id == conversation_id,
-                ChatConversation.user_id == user_id
-            ).first()
+            conversation = await db.execute(
+                select(ChatConversation).filter(
+                    ChatConversation.id == conversation_id,
+                    ChatConversation.user_id == user_id
+                )
+            )
+            conversation = conversation.scalar_one_or_none()
             
             if not conversation:
                 raise ValueError("Conversation not found or access denied")
             
-            messages = db.query(ChatMessage).filter(
-                ChatMessage.conversation_id == conversation_id
-            ).order_by(ChatMessage.created_at.asc()).all()
+            messages = await db.execute(
+                select(ChatMessage).filter(
+                    ChatMessage.conversation_id == conversation_id
+                ).order_by(ChatMessage.created_at.asc())
+            )
+            messages = messages.scalars().all()
             
             # Decrypt messages
-            for message in messages:
-                message.content = self._decrypt_message(message.encrypted_content)
+            for msg in messages:
+                try:
+                    msg.content = self._decrypt_message(msg.encrypted_content)
+                except Exception as e:
+                    logger.error(f"Failed to decrypt message {msg.id}: {e}")
+                    msg.content = "[Message could not be decrypted]"
             
             return messages
             

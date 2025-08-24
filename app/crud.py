@@ -1,5 +1,5 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, desc, select
 from typing import List, Optional
 from app.models import User, ClinicalAssessment
 from app.schemas import UserCreate
@@ -10,22 +10,25 @@ class UserCRUD:
     """CRUD operations for User model."""
     
     @staticmethod
-    def get_user_by_email(db: Session, email: str) -> Optional[User]:
+    async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
         """Get user by email address."""
-        return db.query(User).filter(User.email == email).first()
+        result = await db.execute(select(User).where(User.email == email))
+        return result.scalar_one_or_none()
     
     @staticmethod
-    def get_user_by_username(db: Session, username: str) -> Optional[User]:
+    async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User]:
         """Get user by username."""
-        return db.query(User).filter(User.username == username).first()
+        result = await db.execute(select(User).where(User.username == username))
+        return result.scalar_one_or_none()
     
     @staticmethod
-    def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
+    async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
         """Get user by ID."""
-        return db.query(User).filter(User.id == user_id).first()
+        result = await db.execute(select(User).where(User.id == user_id))
+        return result.scalar_one_or_none()
     
     @staticmethod
-    def create_user(db: Session, user: UserCreate) -> User:
+    async def create_user(db: AsyncSession, user: UserCreate) -> User:
         """Create a new user."""
         hashed_password = get_password_hash(user.password)
         db_user = User(
@@ -36,14 +39,15 @@ class UserCRUD:
             role=getattr(user, 'role', 'user')  # NEW: Add role field with default
         )
         db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
+        await db.commit()
+        await db.refresh(db_user)
         return db_user
     
     @staticmethod
-    def get_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
+    async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[User]:
         """Get list of users with pagination."""
-        return db.query(User).offset(skip).limit(limit).all()
+        result = await db.execute(select(User).offset(skip).limit(limit))
+        return result.scalars().all()
 
 
 
@@ -51,7 +55,7 @@ class ClinicalAssessmentCRUD:
     """CRUD operations for ClinicalAssessment model."""
     
     @staticmethod
-    def create_clinical_assessment(db: Session, user_id: int, assessment_data: dict) -> ClinicalAssessment:
+    async def create_clinical_assessment(db: AsyncSession, user_id: int, assessment_data: dict) -> ClinicalAssessment:
         """Create a new clinical assessment."""
         db_assessment = ClinicalAssessment(
             user_id=user_id,
@@ -64,33 +68,37 @@ class ClinicalAssessmentCRUD:
             responses=assessment_data["responses"]
         )
         db.add(db_assessment)
-        db.commit()
-        db.refresh(db_assessment)
+        await db.commit()
+        await db.refresh(db_assessment)
         return db_assessment
     
     @staticmethod
-    def get_user_clinical_assessments(db: Session, user_id: int, skip: int = 0, limit: int = 50) -> List[ClinicalAssessment]:
+    async def get_user_clinical_assessments(db: AsyncSession, user_id: int, skip: int = 0, limit: int = 50) -> List[ClinicalAssessment]:
         """Get clinical assessments for a specific user with pagination."""
-        return db.query(ClinicalAssessment)\
-                .filter(ClinicalAssessment.user_id == user_id)\
-                .order_by(desc(ClinicalAssessment.created_at))\
-                .offset(skip)\
-                .limit(limit)\
-                .all()
+        result = await db.execute(
+            select(ClinicalAssessment)
+            .where(ClinicalAssessment.user_id == user_id)
+            .order_by(desc(ClinicalAssessment.created_at))
+            .offset(skip)
+            .limit(limit)
+        )
+        return result.scalars().all()
     
     @staticmethod
-    def get_clinical_assessment_by_id(db: Session, assessment_id: int) -> Optional[ClinicalAssessment]:
+    async def get_clinical_assessment_by_id(db: AsyncSession, assessment_id: int) -> Optional[ClinicalAssessment]:
         """Get clinical assessment by ID."""
-        return db.query(ClinicalAssessment)\
-                .filter(ClinicalAssessment.id == assessment_id)\
-                .first()
+        result = await db.execute(
+            select(ClinicalAssessment).where(ClinicalAssessment.id == assessment_id)
+        )
+        return result.scalar_one_or_none()
     
     @staticmethod
-    def get_user_clinical_assessment_summary(db: Session, user_id: int) -> dict:
+    async def get_user_clinical_assessment_summary(db: AsyncSession, user_id: int) -> dict:
         """Get summary statistics for a user's clinical assessments."""
-        assessments = db.query(ClinicalAssessment)\
-                       .filter(ClinicalAssessment.user_id == user_id)\
-                       .all()
+        result = await db.execute(
+            select(ClinicalAssessment).where(ClinicalAssessment.user_id == user_id)
+        )
+        assessments = result.scalars().all()
         
         if not assessments:
             return {
@@ -121,15 +129,18 @@ class ClinicalAssessmentCRUD:
         return summary
     
     @staticmethod
-    def delete_clinical_assessment(db: Session, assessment_id: int, user_id: int) -> bool:
+    async def delete_clinical_assessment(db: AsyncSession, assessment_id: int, user_id: int) -> bool:
         """Delete a clinical assessment (only if it belongs to the user)."""
-        assessment = db.query(ClinicalAssessment)\
-                      .filter(ClinicalAssessment.id == assessment_id,
-                             ClinicalAssessment.user_id == user_id)\
-                      .first()
+        result = await db.execute(
+            select(ClinicalAssessment).where(
+                ClinicalAssessment.id == assessment_id,
+                ClinicalAssessment.user_id == user_id
+            )
+        )
+        assessment = result.scalar_one_or_none()
         
         if assessment:
-            db.delete(assessment)
-            db.commit()
+            await db.delete(assessment)
+            await db.commit()
             return True
         return False 

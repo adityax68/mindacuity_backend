@@ -1,6 +1,8 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, Float, Boolean, JSON, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, DateTime, Text, Float, Boolean, JSON, ForeignKey, Table, Date
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import UUID
+import uuid
 from app.database import Base
 
 # Many-to-many relationship for user privileges
@@ -126,4 +128,34 @@ class RateLimit(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationship
-    user = relationship("User", back_populates="rate_limits") 
+    user = relationship("User", back_populates="rate_limits")
+
+# New Organization/Employee Models
+class Organization(Base):
+    __tablename__ = "organisations"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    company_name = Column(String(150), nullable=False)
+    hremail = Column(String(150), unique=True, nullable=False, index=True)
+    password_hash = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    employees = relationship("Employee", back_populates="organization", cascade="all, delete-orphan")
+
+class Employee(Base):
+    __tablename__ = "employees"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False)
+    employee_email = Column(String(150), nullable=False, index=True)
+    password_hash = Column(Text, nullable=False)
+    name = Column(String(100), nullable=False)
+    dob = Column(Date, nullable=True)
+    phone_number = Column(String(20), nullable=True)
+    joining_date = Column(Date, server_default=func.current_date())
+    role = Column(String(20), default="employee")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    organization = relationship("Organization", back_populates="employees") 

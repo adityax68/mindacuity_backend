@@ -1,7 +1,8 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Dict, Any
-from datetime import datetime
+from typing import Optional, List, Dict, Any, Union
+from datetime import datetime, date
 from app.clinical_assessments import AssessmentType, QuestionResponse, SeverityLevel
+import uuid
 
 # User schemas
 class UserBase(BaseModel):
@@ -20,7 +21,7 @@ class UserLogin(BaseModel):
 class User(UserBase):
     id: int
     role: str  # NEW: Add role field
-    privileges: List[str]  # NEW: Add privileges
+    privileges: Optional[List[str]] = []  # NEW: Add privileges (optional)
     is_active: bool
     created_at: datetime
     
@@ -151,7 +152,6 @@ class ChatConversationResponse(BaseModel):
     title: Optional[str]
     created_at: datetime
     updated_at: datetime
-    messages: List[ChatMessageResponse]
     
     class Config:
         from_attributes = True
@@ -160,3 +160,56 @@ class ChatResponse(BaseModel):
     conversation_id: int
     assistant_message: str
     message_id: int 
+
+# New Organization/Employee Authentication Schemas
+class OrganizationBase(BaseModel):
+    company_name: str = Field(..., min_length=1, max_length=150)
+    hremail: EmailStr
+    password: str = Field(..., min_length=8)
+
+class OrganizationCreate(OrganizationBase):
+    pass
+
+class OrganizationResponse(BaseModel):
+    id: uuid.UUID
+    company_name: str
+    hremail: str
+    role: str = "organization_hr"
+    
+    class Config:
+        from_attributes = True
+
+class EmployeeBase(BaseModel):
+    company_id: uuid.UUID
+    employee_email: EmailStr
+    password: str = Field(..., min_length=8)
+    name: str = Field(..., min_length=1, max_length=100)
+    dob: Optional[date] = None
+    phone_number: Optional[str] = Field(None, max_length=20)
+    joining_date: Optional[date] = None
+
+class EmployeeCreate(EmployeeBase):
+    pass
+
+class EmployeeResponse(BaseModel):
+    id: uuid.UUID
+    company_id: uuid.UUID
+    employee_email: str
+    name: str
+    role: str = "employee"
+    
+    class Config:
+        from_attributes = True
+
+class TokenResponse(BaseModel):
+    access_token: str
+    user: Union[OrganizationResponse, EmployeeResponse]
+
+class OrganizationLogin(BaseModel):
+    hremail: EmailStr
+    password: str
+
+class EmployeeLogin(BaseModel):
+    company_id: uuid.UUID
+    employee_email: EmailStr
+    password: str 

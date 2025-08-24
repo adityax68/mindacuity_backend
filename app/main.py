@@ -10,10 +10,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database import engine
 from app.models import Base
-from app.routers import auth, clinical, admin, chat
-
-# Create database tables
-Base.metadata.create_all(bind=engine)
+from app.routers import auth, clinical, admin, chat, user_auth
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -24,7 +21,7 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# Add CORS middleware
+# Add CORS middleware - Configure for frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Configure this properly for production
@@ -34,11 +31,22 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(auth.router, prefix=settings.api_v1_prefix)
+# New Organization/Employee authentication system
+app.include_router(auth.router)  # No prefix needed as auth router has /api/auth prefix
+
+# Original user authentication system (restored)
+app.include_router(user_auth.router, prefix=settings.api_v1_prefix)  # This creates /api/v1/auth/*
+
+# Other existing routers
 app.include_router(clinical.router, prefix=settings.api_v1_prefix)
 app.include_router(admin.router, prefix=settings.api_v1_prefix)
 app.include_router(chat.router, prefix=settings.api_v1_prefix)
 
+@app.on_event("startup")
+async def startup_event():
+    """Create database tables on startup"""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 @app.get("/")
 async def root():
@@ -49,7 +57,12 @@ async def root():
         "description": "Clinical assessment using validated scales (PHQ-9, GAD-7, PSS-10)",
         "docs": "/docs",
         "redoc": "/redoc",
-        "assessment_types": ["PHQ-9 (Depression)", "GAD-7 (Anxiety)", "PSS-10 (Stress)"]
+        "assessment_types": ["PHQ-9 (Depression)", "GAD-7 (Anxiety)", "PSS-10 (Stress)"],
+        "new_features": ["Organization/Employee Authentication System"],
+        "auth_systems": {
+            "user_auth": "/api/v1/auth/* (Original user authentication)",
+            "org_emp_auth": "/api/auth/* (New Organization/Employee authentication)"
+        }
     }
 
 @app.get("/health")

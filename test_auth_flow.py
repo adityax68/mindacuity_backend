@@ -18,10 +18,10 @@ def test_auth_flow():
     # Test user registration
     print("1. Testing user registration...")
     user_data = {
-        "email": "test6@example.com",
-        "username": "testuser6",
+        "email": "authflow2@example.com",
+        "username": "authflowuser2",
         "password": "testpassword123",
-        "full_name": "Test User 6"
+        "full_name": "Auth Flow User 2"
     }
     
     response = requests.post(f"{API_BASE}/auth/signup", json=user_data)
