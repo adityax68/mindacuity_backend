@@ -1,10 +1,16 @@
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database import engine
 from app.models import Base
-from app.routers import auth, clinical, admin
+from app.routers import auth, clinical, admin, chat
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -31,6 +37,8 @@ app.add_middleware(
 app.include_router(auth.router, prefix=settings.api_v1_prefix)
 app.include_router(clinical.router, prefix=settings.api_v1_prefix)
 app.include_router(admin.router, prefix=settings.api_v1_prefix)
+app.include_router(chat.router, prefix=settings.api_v1_prefix)
+
 
 @app.get("/")
 async def root():

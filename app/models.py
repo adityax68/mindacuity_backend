@@ -39,6 +39,9 @@ class User(Base):
     # NEW: Relationships
     privileges = relationship("Privilege", secondary=user_privileges, back_populates="users")
     assessments = relationship("ClinicalAssessment", back_populates="user")
+    chat_conversations = relationship("ChatConversation", back_populates="user")
+    chat_messages = relationship("ChatMessage", back_populates="user")
+    rate_limits = relationship("RateLimit", back_populates="user")
 
 class Role(Base):
     __tablename__ = "roles"
@@ -83,4 +86,44 @@ class ClinicalAssessment(Base):
     assessment_name = Column(String, nullable=False)  # PHQ-9, GAD-7, PSS-10 
     
     # NEW: Relationship
-    user = relationship("User", back_populates="assessments") 
+    user = relationship("User", back_populates="assessments")
+
+class ChatConversation(Base):
+    __tablename__ = "chat_conversations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String, nullable=True)  # Auto-generated from first message
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationship
+    user = relationship("User", back_populates="chat_conversations")
+    messages = relationship("ChatMessage", back_populates="conversation", cascade="all, delete-orphan")
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("chat_conversations.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    role = Column(String, nullable=False)  # "user" or "assistant"
+    content = Column(Text, nullable=False)  # Encrypted message content
+    encrypted_content = Column(Text, nullable=False)  # Actually encrypted content
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("ChatConversation", back_populates="messages")
+    user = relationship("User", back_populates="chat_messages")
+
+class RateLimit(Base):
+    __tablename__ = "rate_limits"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    message_count = Column(Integer, default=0)
+    window_start = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationship
+    user = relationship("User", back_populates="rate_limits") 

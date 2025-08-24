@@ -129,4 +129,34 @@ class ClinicalAssessmentSummary(BaseModel):
 class QuestionsResponse(BaseModel):
     assessment_type: AssessmentType
     questions: List[str]
-    response_options: List[str] 
+    response_options: List[str]
+
+# Chat schemas
+class ChatMessageRequest(BaseModel):
+    message: str
+    conversation_id: Optional[int] = None
+
+class ChatMessageResponse(BaseModel):
+    id: int
+    conversation_id: int
+    role: str
+    content: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class ChatConversationResponse(BaseModel):
+    id: int
+    title: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    messages: List[ChatMessageResponse]
+    
+    class Config:
+        from_attributes = True
+
+class ChatResponse(BaseModel):
+    conversation_id: int
+    assistant_message: str
+    message_id: int 

@@ -260,6 +260,7 @@ The clinical assessment system uses validated scales:
 - Crisis intervention features
 - Multi-language support
 - Integration with electronic health records
+- Advanced admin dashboard features
 
 ## Contributing
 

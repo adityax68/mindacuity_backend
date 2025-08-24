@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     project_name: str = os.getenv("PROJECT_NAME", "Health App - Mental Health Detection API")
     debug: bool = os.getenv("DEBUG", "False").lower() == "true"
     
+    # OpenAI Configuration
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
