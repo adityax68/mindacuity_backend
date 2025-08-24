@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # OpenAI Configuration
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     
+    # Encryption Configuration
+    encryption_key: str = os.getenv("ENCRYPTION_KEY", "")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

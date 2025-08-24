@@ -9,6 +9,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
 from app.models import ChatConversation, ChatMessage, RateLimit, User
 from app.schemas import ChatMessageRequest, ChatResponse
+from app.config import settings
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -16,21 +17,24 @@ logger = logging.getLogger(__name__)
 
 class ChatService:
     def __init__(self):
-        # Initialize OpenAI client
-        api_key = os.getenv("OPENAI_API_KEY")
+        # Initialize OpenAI client for chat 
+        api_key = settings.openai_api_key
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable is required")
         
         self.client = OpenAI(api_key=api_key)
         
         # Initialize encryption key
-        encryption_key = os.getenv("ENCRYPTION_KEY")
+        encryption_key = settings.encryption_key
         if not encryption_key:
             # Generate a new key if not provided (for development)
-            encryption_key = Fernet.generate_key().decode()
+            encryption_key = Fernet.generate_key()
             logger.warning("ENCRYPTION_KEY not found, using generated key. Set this in production!")
+        else:
+            # Ensure the key is in bytes format
+            encryption_key = encryption_key.encode()
         
-        self.cipher = Fernet(encryption_key.encode())
+        self.cipher = Fernet(encryption_key)
         
         # Rate limiting configuration
         self.max_messages_per_minute = 100
