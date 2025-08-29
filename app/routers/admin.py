@@ -3,8 +3,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_user, require_role
 from app.models import User, Role, Privilege
-from app.schemas import UserResponse, RoleResponse, PrivilegeResponse, UserRoleUpdate
+from app.schemas import UserResponse, RoleResponse, PrivilegeResponse, UserRoleUpdate, OrganisationCreate, OrganisationResponse
 from app.services.role_service import RoleService
+from app.crud import OrganisationCRUD
 from typing import List
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -152,4 +153,49 @@ async def get_analytics(
             "user": db.query(User).filter(User.role == "user").count(),
             "admin": admin_users
         }
-    } 
+    }
+
+@router.post("/organisations", response_model=OrganisationResponse)
+async def create_organisation(
+    organisation: OrganisationCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Create a new organisation (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "manage_organisations")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    # Check if organisation with same email already exists
+    existing_org = OrganisationCRUD.get_organisation_by_email(db, organisation.hr_email)
+    if existing_org:
+        raise HTTPException(status_code=400, detail="Organisation with this HR email already exists")
+    
+    try:
+        # Create organisation
+        new_organisation = OrganisationCRUD.create_organisation(
+            db=db,
+            org_name=organisation.org_name,
+            hr_email=organisation.hr_email
+        )
+        
+        return new_organisation
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create organisation: {str(e)}")
+
+@router.get("/organisations", response_model=List[OrganisationResponse])
+async def get_all_organisations(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Get all organisations (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "read_organisations")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    organisations = OrganisationCRUD.get_all_organisations(db, skip=skip, limit=limit)
+    return organisations

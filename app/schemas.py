@@ -159,4 +159,40 @@ class ChatConversationResponse(BaseModel):
 class ChatResponse(BaseModel):
     conversation_id: int
     assistant_message: str
-    message_id: int 
+    message_id: int
+
+# Organisation schemas
+class OrganisationCreate(BaseModel):
+    org_name: str = Field(..., min_length=1, max_length=255)
+    hr_email: EmailStr
+
+class OrganisationResponse(BaseModel):
+    id: int
+    org_id: str
+    org_name: str
+    hr_email: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+class EmployeeCreate(BaseModel):
+    employee_code: str
+    org_id: str
+    hr_email: str
+
+class Employee(EmployeeCreate):
+    id: int
+    user_id: int
+    full_name: str
+    email: str
+    department: Optional[str] = None
+    position: Optional[str] = None
+    hire_date: Optional[datetime] = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

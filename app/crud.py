@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from typing import List, Optional
-from app.models import User, ClinicalAssessment
+from app.models import User, ClinicalAssessment, Organisation, Employee
 from app.schemas import UserCreate
 from app.auth import get_password_hash
 from app.clinical_assessments import AssessmentType
@@ -44,6 +44,16 @@ class UserCRUD:
     def get_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
         """Get list of users with pagination."""
         return db.query(User).offset(skip).limit(limit).all()
+
+    @staticmethod
+    def update_user_role(db: Session, user_id: int, new_role: str) -> Optional[User]:
+        """Update user's role."""
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            user.role = new_role
+            db.commit()
+            db.refresh(user)
+        return user
 
 
 
@@ -132,4 +142,93 @@ class ClinicalAssessmentCRUD:
             db.delete(assessment)
             db.commit()
             return True
-        return False 
+        return False
+
+class OrganisationCRUD:
+    """CRUD operations for Organisation model."""
+    
+    @staticmethod
+    def generate_org_id(db: Session) -> str:
+        """Generate a unique organisation ID like ORG001, ORG002, etc."""
+        # Get the count of existing organisations
+        count = db.query(func.count(Organisation.id)).scalar()
+        return f"ORG{count + 1:03d}"
+    
+    @staticmethod
+    def create_organisation(db: Session, org_name: str, hr_email: str) -> Organisation:
+        """Create a new organisation with auto-generated org_id."""
+        
+        # Generate unique org_id
+        org_id = OrganisationCRUD.generate_org_id(db)
+        
+        # Create organisation
+        db_organisation = Organisation(
+            org_id=org_id,
+            org_name=org_name,
+            hr_email=hr_email
+        )
+        db.add(db_organisation)
+        db.commit()
+        db.refresh(db_organisation)
+        return db_organisation
+    
+    @staticmethod
+    def get_organisation_by_id(db: Session, org_id: str) -> Optional[Organisation]:
+        """Get organisation by org_id."""
+        return db.query(Organisation).filter(Organisation.org_id == org_id).first()
+    
+    @staticmethod
+    def get_organisation_by_email(db: Session, hr_email: str) -> Optional[Organisation]:
+        """Get organisation by HR email."""
+        return db.query(Organisation).filter(Organisation.hr_email == hr_email).first()
+    
+    @staticmethod
+    def get_all_organisations(db: Session, skip: int = 0, limit: int = 100) -> List[Organisation]:
+        """Get list of all organisations with pagination."""
+        return db.query(Organisation).offset(skip).limit(limit).all()
+
+class EmployeeCRUD:
+    """CRUD operations for Employee model."""
+    
+    @staticmethod
+    def generate_employee_code(db: Session) -> str:
+        """Generate a unique employee code like EMP001, EMP002, etc."""
+        # Get the count of existing employees
+        count = db.query(func.count(Employee.id)).scalar()
+        return f"EMP{count + 1:03d}"
+    
+    @staticmethod
+    def create_employee(db: Session, user_id: int, employee_code: str, org_id: str, hr_email: str, full_name: str, email: str) -> Employee:
+        """Create a new employee record."""
+        db_employee = Employee(
+            user_id=user_id,
+            employee_code=employee_code,
+            org_id=org_id,
+            hr_email=hr_email,
+            full_name=full_name,
+            email=email
+        )
+        db.add(db_employee)
+        db.commit()
+        db.refresh(db_employee)
+        return db_employee
+    
+    @staticmethod
+    def get_employee_by_user_id(db: Session, user_id: int) -> Optional[Employee]:
+        """Get employee by user ID."""
+        return db.query(Employee).filter(Employee.user_id == user_id).first()
+    
+    @staticmethod
+    def get_employees_by_hr_email(db: Session, hr_email: str) -> List[Employee]:
+        """Get all employees managed by a specific HR."""
+        return db.query(Employee).filter(Employee.hr_email == hr_email, Employee.is_active == True).all()
+    
+    @staticmethod
+    def get_employees_by_org_id(db: Session, org_id: str) -> List[Employee]:
+        """Get all employees in a specific organization."""
+        return db.query(Employee).filter(Employee.org_id == org_id, Employee.is_active == True).all()
+    
+    @staticmethod
+    def get_employee_by_code(db: Session, employee_code: str) -> Optional[Employee]:
+        """Get employee by employee code."""
+        return db.query(Employee).filter(Employee.employee_code == employee_code).first()

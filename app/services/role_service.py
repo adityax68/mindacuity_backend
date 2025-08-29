@@ -51,11 +51,38 @@ class RoleService:
             admin_role = Role(name="admin", description="Administrator with full access")
             self.db.add(admin_role)
         
+        hr_role = self.db.query(Role).filter(Role.name == "hr").first()
+        if not hr_role:
+            hr_role = Role(name="hr", description="HR personnel with employee management access")
+            self.db.add(hr_role)
+        
+        employee_role = self.db.query(Role).filter(Role.name == "employee").first()
+        if not employee_role:
+            employee_role = Role(name="employee", description="Employee with basic assessment access")
+            self.db.add(employee_role)
+        
+        counsellor_role = self.db.query(Role).filter(Role.name == "counsellor").first()
+        if not counsellor_role:
+            counsellor_role = Role(name="counsellor", description="Counsellor with assessment and support access")
+            self.db.add(counsellor_role)
+        
         self.db.commit()
         
         # Assign privileges to roles
         await self.assign_privileges_to_role("user", [
             "take_assessment", "read_own_assessments"
+        ])
+        
+        await self.assign_privileges_to_role("employee", [
+            "take_assessment", "read_own_assessments"
+        ])
+        
+        await self.assign_privileges_to_role("hr", [
+            "take_assessment", "read_own_assessments", "read_all_assessments", "read_users", "view_analytics"
+        ])
+        
+        await self.assign_privileges_to_role("counsellor", [
+            "take_assessment", "read_own_assessments", "read_all_assessments", "view_analytics"
         ])
         
         # Admin gets all privileges

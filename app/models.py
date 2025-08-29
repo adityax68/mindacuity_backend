@@ -42,6 +42,7 @@ class User(Base):
     chat_conversations = relationship("ChatConversation", back_populates="user")
     chat_messages = relationship("ChatMessage", back_populates="user")
     rate_limits = relationship("RateLimit", back_populates="user")
+    employee = relationship("Employee", back_populates="user", uselist=False)
 
 class Role(Base):
     __tablename__ = "roles"
@@ -126,4 +127,34 @@ class RateLimit(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationship
-    user = relationship("User", back_populates="rate_limits") 
+    user = relationship("User", back_populates="rate_limits")
+
+class Organisation(Base):
+    __tablename__ = "organisations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(String, unique=True, index=True, nullable=False)  # Unique identifier like ORG001
+    org_name = Column(String, nullable=False)
+    hr_email = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+class Employee(Base):
+    __tablename__ = "employees"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    employee_code = Column(String, unique=True, index=True, nullable=False)  # EMP001, EMP002, etc.
+    org_id = Column(String, nullable=False)
+    hr_email = Column(String, nullable=False)
+    full_name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    department = Column(String)  # Optional: IT, HR, Sales, etc.
+    position = Column(String)    # Optional: Manager, Developer, etc.
+    hire_date = Column(DateTime(timezone=True))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationship
+    user = relationship("User", back_populates="employee")
