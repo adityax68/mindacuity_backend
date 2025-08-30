@@ -196,3 +196,29 @@ class Employee(EmployeeCreate):
 
     class Config:
         from_attributes = True
+
+# NEW: HR Employee List Response schemas
+class EmployeeListItem(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    employee_code: str
+    user_id: int
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+class PaginationInfo(BaseModel):
+    current_page: int
+    total_pages: int
+    total_employees: int
+    employees_per_page: int
+
+class HREmployeeListData(BaseModel):
+    employees: list[EmployeeListItem]
+    pagination: PaginationInfo
+
+class HREmployeeListResponse(BaseModel):
+    success: bool
+    data: HREmployeeListData

@@ -232,3 +232,42 @@ class EmployeeCRUD:
     def get_employee_by_code(db: Session, employee_code: str) -> Optional[Employee]:
         """Get employee by employee code."""
         return db.query(Employee).filter(Employee.employee_code == employee_code).first()
+    
+    @staticmethod
+    def get_employees_for_hr_dashboard(
+        db: Session, 
+        org_id: str, 
+        search: str = "", 
+        page: int = 1, 
+        limit: Optional[int] = 10
+    ) -> tuple[list[Employee], int]:
+        """
+        Get employees for HR dashboard with search and pagination.
+        Returns (employees, total_count)
+        """
+        # Base query
+        query = db.query(Employee).filter(
+            Employee.org_id == org_id,
+            Employee.is_active == True
+        )
+        
+        # Apply search filter if provided
+        if search:
+            search_filter = db.or_(
+                Employee.employee_code.ilike(f"%{search}%"),
+                Employee.email.ilike(f"%{search}%")
+            )
+            query = query.filter(search_filter)
+        
+        # Get total count for pagination
+        total_count = query.count()
+        
+        # Apply pagination only if limit is specified
+        if limit:
+            offset = (page - 1) * limit
+            employees = query.order_by(Employee.full_name).offset(offset).limit(limit).all()
+        else:
+            # If no limit, return all employees
+            employees = query.order_by(Employee.full_name).all()
+        
+        return employees, total_count
