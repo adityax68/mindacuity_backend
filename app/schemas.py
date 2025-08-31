@@ -157,7 +157,7 @@ class ChatConversationResponse(BaseModel):
         from_attributes = True
 
 class ChatResponse(BaseModel):
-    conversation_id: int
+    conversation_id: int  # This will be the conversation.id
     assistant_message: str
     message_id: int
 
