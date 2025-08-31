@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database import engine
 from app.models import Base
-from app.routers import auth, clinical, admin, chat, access, hr
+from app.routers import auth, clinical, admin, chat, access, hr, complaints
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -40,6 +40,7 @@ app.include_router(admin.router, prefix=settings.api_v1_prefix)
 app.include_router(chat.router, prefix=settings.api_v1_prefix)
 app.include_router(access.router, prefix=settings.api_v1_prefix)
 app.include_router(hr.router, prefix=settings.api_v1_prefix)
+app.include_router(complaints.router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/")

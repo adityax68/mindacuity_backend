@@ -196,3 +196,25 @@ class Employee(EmployeeCreate):
 
     class Config:
         from_attributes = True
+
+# Complaint schemas
+class ComplaintCreate(BaseModel):
+    complaint_text: str
+    share_employee_id: bool = True  # Default to sharing employee ID
+
+class ComplaintUpdate(BaseModel):
+    status: str
+    hr_notes: Optional[str] = None
+
+class Complaint(BaseModel):
+    id: int
+    user_id: int
+    employee_id: Optional[int] = None  # Optional for anonymous complaints
+    complaint_text: str
+    status: str
+    hr_notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

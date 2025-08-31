@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, or_
 from typing import List, Optional
-from app.models import User, ClinicalAssessment, Organisation, Employee
+from app.models import User, ClinicalAssessment, Organisation, Employee, Complaint
 from app.schemas import UserCreate
 from app.auth import get_password_hash
 from app.clinical_assessments import AssessmentType
@@ -232,3 +232,80 @@ class EmployeeCRUD:
     def get_employee_by_code(db: Session, employee_code: str) -> Optional[Employee]:
         """Get employee by employee code."""
         return db.query(Employee).filter(Employee.employee_code == employee_code).first()
+    
+    @staticmethod
+    def get_employee_by_id(db: Session, employee_id: int) -> Optional[Employee]:
+        """Get employee by ID."""
+        return db.query(Employee).filter(Employee.id == employee_id).first()
+    
+    @staticmethod
+    def update_employee_status(db: Session, employee_id: int, is_active: bool) -> Optional[Employee]:
+        """Update employee status (active/inactive)."""
+        employee = db.query(Employee).filter(Employee.id == employee_id).first()
+        if employee:
+            employee.is_active = is_active
+            db.commit()
+            db.refresh(employee)
+            return employee
+        return None
+
+class ComplaintCRUD:
+    """CRUD operations for Complaint model."""
+    
+    @staticmethod
+    def create_complaint(db: Session, user_id: int, employee_id: Optional[int], complaint_text: str) -> Complaint:
+        """Create a new complaint."""
+        db_complaint = Complaint(
+            user_id=user_id,
+            employee_id=employee_id,
+            complaint_text=complaint_text
+        )
+        db.add(db_complaint)
+        db.commit()
+        db.refresh(db_complaint)
+        return db_complaint
+    
+    @staticmethod
+    def get_user_complaints(db: Session, user_id: int) -> List[Complaint]:
+        """Get all complaints for a specific user."""
+        return db.query(Complaint).filter(Complaint.user_id == user_id).order_by(desc(Complaint.created_at)).all()
+    
+    @staticmethod
+    def get_employee_complaints(db: Session, employee_id: int) -> List[Complaint]:
+        """Get all complaints for a specific employee."""
+        return db.query(Complaint).filter(Complaint.employee_id == employee_id).order_by(desc(Complaint.created_at)).all()
+    
+    @staticmethod
+    def get_all_complaints_for_hr(db: Session, hr_email: str) -> List[Complaint]:
+        """Get all complaints for HR to manage (both identified and anonymous)."""
+        # Get complaints from employees managed by this HR
+        from app.models import Employee
+        employee_ids = [emp.id for emp in db.query(Employee).filter(Employee.hr_email == hr_email).all()]
+        
+        # Get complaints that either have employee_id in the managed list OR are anonymous (employee_id is None)
+        complaints = db.query(Complaint).filter(
+            or_(
+                Complaint.employee_id.in_(employee_ids),
+                Complaint.employee_id.is_(None)
+            )
+        ).order_by(desc(Complaint.created_at)).all()
+        
+        return complaints
+    
+    @staticmethod
+    def get_complaint_by_id(db: Session, complaint_id: int) -> Optional[Complaint]:
+        """Get complaint by ID."""
+        return db.query(Complaint).filter(Complaint.id == complaint_id).first()
+    
+    @staticmethod
+    def update_complaint_status(db: Session, complaint_id: int, status: str, hr_notes: Optional[str] = None) -> Optional[Complaint]:
+        """Update complaint status and HR notes."""
+        complaint = db.query(Complaint).filter(Complaint.id == complaint_id).first()
+        if complaint:
+            complaint.status = status
+            if hr_notes is not None:
+                complaint.hr_notes = hr_notes
+            db.commit()
+            db.refresh(complaint)
+            return complaint
+        return None

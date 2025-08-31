@@ -43,6 +43,7 @@ class User(Base):
     chat_messages = relationship("ChatMessage", back_populates="user")
     rate_limits = relationship("RateLimit", back_populates="user")
     employee = relationship("Employee", back_populates="user", uselist=False)
+    complaints = relationship("Complaint", back_populates="user")
 
 class Role(Base):
     __tablename__ = "roles"
@@ -94,13 +95,30 @@ class ChatConversation(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    title = Column(String, nullable=True)  # Auto-generated from first message
+    conversation_id = Column(String, unique=True, index=True, nullable=False)
+    title = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    # Relationship
+    # Relationships
     user = relationship("User", back_populates="chat_conversations")
     messages = relationship("ChatMessage", back_populates="conversation", cascade="all, delete-orphan")
+
+class Complaint(Base):
+    __tablename__ = "complaints"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)  # Optional for anonymous complaints
+    complaint_text = Column(Text, nullable=False)
+    status = Column(String, default="pending")  # pending, resolved
+    hr_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="complaints")
+    employee = relationship("Employee", back_populates="complaints")
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -158,3 +176,4 @@ class Employee(Base):
     
     # Relationship
     user = relationship("User", back_populates="employee")
+    complaints = relationship("Complaint", back_populates="employee")
