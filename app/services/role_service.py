@@ -29,6 +29,10 @@ class RoleService:
             {"name": "system_config", "description": "Configure system settings", "category": "system"},
             {"name": "view_analytics", "description": "View system analytics", "category": "system"},
             {"name": "manage_roles", "description": "Manage user roles and privileges", "category": "system"},
+            
+            # Organisation management privileges
+            {"name": "manage_organisations", "description": "Create, update, and delete organisations", "category": "organisation_management"},
+            {"name": "read_organisations", "description": "View organisation details and lists", "category": "organisation_management"},
         ]
         
         # Create privileges if they don't exist
