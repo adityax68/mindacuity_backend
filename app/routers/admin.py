@@ -199,3 +199,96 @@ async def get_all_organisations(
     
     organisations = OrganisationCRUD.get_all_organisations(db, skip=skip, limit=limit)
     return organisations
+
+@router.get("/stats")
+async def get_admin_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Get admin statistics (Admin only)"""
+    # Check if user has admin privileges
+    has_privilege = await role_service.user_has_privilege(current_user.id, "view_analytics")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    try:
+        # Import models for counting
+        from app.models import User, Employee, Organisation
+        
+        # Count records in each table
+        total_users = db.query(User).count()
+        total_employees = db.query(Employee).count()
+        total_organizations = db.query(Organisation).count()
+        
+        return {
+            "totalUsers": total_users,
+            "totalEmployees": total_employees,
+            "totalOrganizations": total_organizations
+        }
+        
+    except Exception as e:
+        # Log the error for debugging
+        import logging
+        logging.error(f"Error fetching admin stats: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/weekly-users")
+async def get_weekly_user_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Get weekly user registration statistics (Admin only)"""
+    # Check if user has admin privileges
+    has_privilege = await role_service.user_has_privilege(current_user.id, "view_analytics")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    try:
+        # Import models and functions for date handling
+        from app.models import User
+        from sqlalchemy import func, text
+        from datetime import datetime, timedelta
+        
+        # Get the last 12 weeks of data
+        twelve_weeks_ago = datetime.utcnow() - timedelta(weeks=12)
+        
+        # Query to get weekly user registration data
+        # Using PostgreSQL's DATE_TRUNC function to group by week
+        query = text("""
+            SELECT 
+                DATE_TRUNC('week', created_at) as week_start,
+                COUNT(*) as new_users
+            FROM users 
+            WHERE created_at >= :start_date
+            GROUP BY DATE_TRUNC('week', created_at)
+            ORDER BY DATE_TRUNC('week', created_at)
+        """)
+        
+        result = db.execute(query, {"start_date": twelve_weeks_ago}).fetchall()
+        
+        # Format the data according to the required structure
+        weekly_data = []
+        week_number = 1
+        
+        for row in result:
+            weekly_data.append({
+                "week": f"Week {week_number}",
+                "newUsers": row.new_users
+            })
+            week_number += 1
+        
+        # If no data found, return empty array
+        if not weekly_data:
+            weekly_data = []
+        
+        return {
+            "weeklyData": weekly_data
+        }
+        
+    except Exception as e:
+        # Log the error for debugging
+        import logging
+        logging.error(f"Error fetching weekly user stats: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
