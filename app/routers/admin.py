@@ -239,7 +239,7 @@ async def get_weekly_user_stats(
     db: Session = Depends(get_db),
     role_service: RoleService = Depends(get_role_service)
 ):
-    """Get weekly user registration statistics (Admin only)"""
+    """Get monthly user registration statistics (Admin only)"""
     # Check if user has admin privileges
     has_privilege = await role_service.user_has_privilege(current_user.id, "view_analytics")
     if not has_privilege:
@@ -251,33 +251,33 @@ async def get_weekly_user_stats(
         from sqlalchemy import func, text
         from datetime import datetime, timedelta
         
-        # Get the last 12 weeks of data
-        twelve_weeks_ago = datetime.utcnow() - timedelta(weeks=12)
+        # Get the last 12 months of data
+        twelve_months_ago = datetime.utcnow() - timedelta(days=365)
         
-        # Query to get weekly user registration data
-        # Using PostgreSQL's DATE_TRUNC function to group by week
+        # Query to get monthly user registration data
+        # Using PostgreSQL's DATE_TRUNC function to group by month
         query = text("""
             SELECT 
-                DATE_TRUNC('week', created_at) as week_start,
+                DATE_TRUNC('month', created_at) as month_start,
                 COUNT(*) as new_users
             FROM users 
             WHERE created_at >= :start_date
-            GROUP BY DATE_TRUNC('week', created_at)
-            ORDER BY DATE_TRUNC('week', created_at)
+            GROUP BY DATE_TRUNC('month', created_at)
+            ORDER BY DATE_TRUNC('month', created_at)
         """)
         
-        result = db.execute(query, {"start_date": twelve_weeks_ago}).fetchall()
+        result = db.execute(query, {"start_date": twelve_months_ago}).fetchall()
         
         # Format the data according to the required structure
         weekly_data = []
-        week_number = 1
+        month_number = 1
         
         for row in result:
             weekly_data.append({
-                "week": f"Week {week_number}",
+                "week": f"Week {month_number}",
                 "newUsers": row.new_users
             })
-            week_number += 1
+            month_number += 1
         
         # If no data found, return empty array
         if not weekly_data:
