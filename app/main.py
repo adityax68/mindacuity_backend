@@ -12,7 +12,7 @@ from app.database import engine
 from app.models import Base
 from app.routers import auth, clinical, admin, chat, access, hr, complaints
 
-# Create database tables
+# Create database tables done
 Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI app
@@ -46,6 +46,7 @@ app.include_router(complaints.router, prefix=settings.api_v1_prefix)
 @app.get("/")
 async def root():
     """Root endpoint with API information."""
+    print('api working')
     return {
         "message": "Clinical Mental Health Assessment API",
         "version": "1.0.0",
