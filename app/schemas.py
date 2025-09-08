@@ -79,7 +79,86 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
 
-# Clinical Assessment schemas
+# New Test System Schemas
+class TestDefinitionResponse(BaseModel):
+    id: int
+    test_code: str
+    test_name: str
+    test_category: str
+    description: Optional[str]
+    total_questions: int
+    is_active: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class TestQuestionOptionResponse(BaseModel):
+    id: int
+    option_text: str
+    option_value: int
+    weight: float
+    display_order: int
+    
+    class Config:
+        from_attributes = True
+
+class TestQuestionResponse(BaseModel):
+    id: int
+    question_number: int
+    question_text: str
+    is_reverse_scored: bool
+    options: List[TestQuestionOptionResponse]
+    
+    class Config:
+        from_attributes = True
+
+class TestScoringRangeResponse(BaseModel):
+    id: int
+    min_score: int
+    max_score: int
+    severity_level: str
+    severity_label: str
+    interpretation: str
+    recommendations: Optional[str]
+    color_code: Optional[str]
+    priority: int
+    
+    class Config:
+        from_attributes = True
+
+class TestDetailsResponse(BaseModel):
+    test_definition: TestDefinitionResponse
+    questions: List[TestQuestionResponse]
+    scoring_ranges: List[TestScoringRangeResponse]
+    
+    class Config:
+        from_attributes = True
+
+class TestAssessmentRequest(BaseModel):
+    responses: List[Dict[str, Any]]  # [{"question_id": 1, "option_id": 2}, ...]
+
+class TestAssessmentResponse(BaseModel):
+    id: int
+    user_id: int
+    test_definition_id: int
+    test_code: str
+    test_name: str
+    test_category: str
+    calculated_score: int
+    max_score: int
+    severity_level: str
+    severity_label: str
+    interpretation: str
+    recommendations: Optional[str]
+    color_code: Optional[str]
+    raw_responses: List[Dict[str, Any]]
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# Clinical Assessment schemas (legacy)
 class ClinicalAssessmentRequest(BaseModel):
     assessment_type: AssessmentType
     responses: List[QuestionResponse]

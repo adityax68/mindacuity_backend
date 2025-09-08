@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
 from app.auth import get_current_active_user
-from app.crud import ClinicalAssessmentCRUD
+from app.crud import ClinicalAssessmentCRUD, TestCRUD
 from app.clinical_assessments import clinical_engine, AssessmentType
 from app.schemas import (
     ClinicalAssessmentRequest, 
@@ -12,6 +12,7 @@ from app.schemas import (
     QuestionsResponse,
     ComprehensiveAssessmentRequest,
     ComprehensiveAssessmentResponse,
+    TestAssessmentResponse,
     User
 )
 
@@ -292,6 +293,99 @@ def get_clinical_assessment_summary(
     )
     
     return ClinicalAssessmentSummary(**summary)
+
+@router.get("/unified-assessments", response_model=List[dict])
+def get_unified_assessment_history(
+    skip: int = 0,
+    limit: int = 50,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get unified assessment history including both old clinical assessments and new test system results.
+    
+    - **skip**: Number of records to skip (for pagination)
+    - **limit**: Maximum number of records to return (max 100)
+    """
+    if limit > 100:
+        limit = 100
+    
+    # Get old clinical assessments
+    clinical_assessments = ClinicalAssessmentCRUD.get_user_clinical_assessments(
+        db=db, 
+        user_id=current_user.id, 
+        skip=skip, 
+        limit=limit
+    )
+    
+    # Get new test assessments using the proper conversion
+    from app.routers.tests import convert_to_test_assessment_response
+    
+    test_assessments_raw = TestCRUD.get_user_test_assessments(
+        db=db,
+        user_id=current_user.id,
+        skip=skip,
+        limit=limit
+    )
+    
+    # Convert test assessments to proper response format
+    test_assessments = []
+    for assessment in test_assessments_raw:
+        test_definition = TestCRUD.get_test_definition_by_id(db, assessment.test_definition_id)
+        test_assessments.append(convert_to_test_assessment_response(assessment, test_definition))
+    
+    # Convert clinical assessments to unified format
+    unified_assessments = []
+    
+    for assessment in clinical_assessments:
+        unified_assessments.append({
+            "id": assessment.id,
+            "user_id": assessment.user_id,
+            "type": "clinical",
+            "assessment_type": assessment.assessment_type,
+            "assessment_name": assessment.assessment_name,
+            "test_code": assessment.assessment_type,
+            "test_category": assessment.test_category or "clinical",
+            "total_score": assessment.total_score,
+            "max_score": assessment.max_score,
+            "calculated_score": assessment.calculated_score or assessment.total_score,
+            "severity_level": assessment.severity_level,
+            "severity_label": assessment.severity_label or assessment.severity_level,
+            "interpretation": assessment.interpretation,
+            "recommendations": getattr(assessment, 'recommendations', None),
+            "color_code": getattr(assessment, 'color_code', None),
+            "responses": assessment.responses,
+            "raw_responses": assessment.raw_responses or assessment.responses,
+            "created_at": assessment.created_at
+        })
+    
+    # Convert test assessments to unified format
+    for assessment in test_assessments:
+        unified_assessments.append({
+            "id": assessment.id,
+            "user_id": assessment.user_id,
+            "type": "test",
+            "assessment_type": assessment.test_code,
+            "assessment_name": assessment.test_name,
+            "test_code": assessment.test_code,
+            "test_category": assessment.test_category,
+            "total_score": assessment.calculated_score,
+            "max_score": assessment.max_score,
+            "calculated_score": assessment.calculated_score,
+            "severity_level": assessment.severity_level,
+            "severity_label": assessment.severity_label,
+            "interpretation": assessment.interpretation,
+            "recommendations": assessment.recommendations,
+            "color_code": assessment.color_code,
+            "responses": assessment.raw_responses,
+            "raw_responses": assessment.raw_responses,
+            "created_at": assessment.created_at
+        })
+    
+    # Sort by created_at descending
+    unified_assessments.sort(key=lambda x: x["created_at"], reverse=True)
+    
+    return unified_assessments
 
 @router.get("/{assessment_id}", response_model=ClinicalAssessmentResponse)
 def get_clinical_assessment(

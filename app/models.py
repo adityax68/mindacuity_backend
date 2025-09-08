@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, Float, Boolean, JSON, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, DateTime, Text, Float, Boolean, JSON, ForeignKey, Table, Numeric
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -71,24 +71,100 @@ class Privilege(Base):
     users = relationship("User", secondary=user_privileges, back_populates="privileges")
     roles = relationship("Role", secondary=role_privileges, back_populates="privileges")
 
+# New Test Schema Models
+class TestDefinition(Base):
+    __tablename__ = "test_definitions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    test_code = Column(String(50), unique=True, nullable=False)
+    test_name = Column(String(100), nullable=False)
+    test_category = Column(String(50), nullable=False)
+    description = Column(Text)
+    total_questions = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    questions = relationship("TestQuestion", back_populates="test_definition", cascade="all, delete-orphan")
+    scoring_ranges = relationship("TestScoringRange", back_populates="test_definition", cascade="all, delete-orphan")
+    assessments = relationship("ClinicalAssessment", back_populates="test_definition")
+
+class TestQuestion(Base):
+    __tablename__ = "test_questions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    test_definition_id = Column(Integer, ForeignKey("test_definitions.id"), nullable=False)
+    question_number = Column(Integer, nullable=False)
+    question_text = Column(Text, nullable=False)
+    is_reverse_scored = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    test_definition = relationship("TestDefinition", back_populates="questions")
+    options = relationship("TestQuestionOption", back_populates="question", cascade="all, delete-orphan")
+
+class TestQuestionOption(Base):
+    __tablename__ = "test_question_options"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    test_definition_id = Column(Integer, ForeignKey("test_definitions.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("test_questions.id"), nullable=False)
+    option_text = Column(String(200), nullable=False)
+    option_value = Column(Integer, nullable=False)
+    weight = Column(Numeric(3,2), default=1.0)
+    display_order = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    test_definition = relationship("TestDefinition")
+    question = relationship("TestQuestion", back_populates="options")
+
+class TestScoringRange(Base):
+    __tablename__ = "test_scoring_ranges"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    test_definition_id = Column(Integer, ForeignKey("test_definitions.id"), nullable=False)
+    min_score = Column(Integer, nullable=False)
+    max_score = Column(Integer, nullable=False)
+    severity_level = Column(String(50), nullable=False)
+    severity_label = Column(String(100), nullable=False)
+    interpretation = Column(Text, nullable=False)
+    recommendations = Column(Text)
+    color_code = Column(String(7))
+    priority = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    test_definition = relationship("TestDefinition", back_populates="scoring_ranges")
+
 class ClinicalAssessment(Base):
     __tablename__ = "clinical_assessments"
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    assessment_type = Column(String, nullable=False)  # phq9, gad7, pss10
-    total_score = Column(Integer, nullable=False)
-    severity_level = Column(String, nullable=False)  # minimal, mild, moderate, etc.
-    interpretation = Column(Text, nullable=False)
-    responses = Column(JSON, nullable=False)  # Store question responses as JSON
+    
+    # Legacy fields (keeping for backward compatibility)
+    assessment_type = Column(String, nullable=True)  # phq9, gad7, pss10
+    total_score = Column(Integer, nullable=True)
+    severity_level = Column(String, nullable=True)  # minimal, mild, moderate, etc.
+    interpretation = Column(Text, nullable=True)
+    responses = Column(JSON, nullable=True)  # Store question responses as JSON
+    max_score = Column(Integer, nullable=True)
+    assessment_name = Column(String, nullable=True)  # PHQ-9, GAD-7, PSS-10 
+    
+    # New fields for test system
+    test_definition_id = Column(Integer, ForeignKey("test_definitions.id"), nullable=True)
+    test_category = Column(String(50), nullable=True)
+    raw_responses = Column(JSON, nullable=True)  # Store actual option selections
+    calculated_score = Column(Integer, nullable=True)  # Final calculated score
+    severity_label = Column(String(100), nullable=True)  # Human-readable severity
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    # Additional metadata
-    max_score = Column(Integer, nullable=False)
-    assessment_name = Column(String, nullable=False)  # PHQ-9, GAD-7, PSS-10 
-    
-    # NEW: Relationship
+    # Relationships
     user = relationship("User", back_populates="assessments")
+    test_definition = relationship("TestDefinition", back_populates="assessments")
 
 class ChatConversation(Base):
     __tablename__ = "chat_conversations"

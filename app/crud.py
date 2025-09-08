@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, or_
-from typing import List, Optional
-from app.models import User, ClinicalAssessment, Organisation, Employee, Complaint
+from typing import List, Optional, Dict, Any
+from app.models import User, ClinicalAssessment, Organisation, Employee, Complaint, TestDefinition, TestQuestion, TestQuestionOption, TestScoringRange
 from app.schemas import UserCreate
 from app.auth import get_password_hash
 from app.clinical_assessments import AssessmentType
@@ -309,3 +309,195 @@ class ComplaintCRUD:
             db.refresh(complaint)
             return complaint
         return None
+
+class TestCRUD:
+    """CRUD operations for Test system."""
+    
+    @staticmethod
+    def get_test_definitions(db: Session, category: str = None) -> List[TestDefinition]:
+        """Get all test definitions, optionally filtered by category."""
+        query = db.query(TestDefinition).filter(TestDefinition.is_active == True)
+        if category:
+            query = query.filter(TestDefinition.test_category == category)
+        return query.order_by(TestDefinition.test_name).all()
+    
+    @staticmethod
+    def get_test_definition_by_code(db: Session, test_code: str) -> Optional[TestDefinition]:
+        """Get test definition by test code."""
+        return db.query(TestDefinition).filter(TestDefinition.test_code == test_code).first()
+    
+    @staticmethod
+    def get_test_definition_by_id(db: Session, test_definition_id: int) -> Optional[TestDefinition]:
+        """Get test definition by ID."""
+        return db.query(TestDefinition).filter(TestDefinition.id == test_definition_id).first()
+    
+    @staticmethod
+    def get_test_questions(db: Session, test_definition_id: int) -> List[TestQuestion]:
+        """Get all questions for a test definition."""
+        return db.query(TestQuestion).filter(
+            TestQuestion.test_definition_id == test_definition_id
+        ).order_by(TestQuestion.question_number).all()
+    
+    @staticmethod
+    def get_test_question_options(db: Session, test_definition_id: int) -> List[TestQuestionOption]:
+        """Get all question options for a test definition."""
+        return db.query(TestQuestionOption).filter(
+            TestQuestionOption.test_definition_id == test_definition_id
+        ).order_by(TestQuestionOption.question_id, TestQuestionOption.display_order).all()
+    
+    @staticmethod
+    def get_test_scoring_ranges(db: Session, test_definition_id: int) -> List[TestScoringRange]:
+        """Get all scoring ranges for a test definition."""
+        return db.query(TestScoringRange).filter(
+            TestScoringRange.test_definition_id == test_definition_id
+        ).order_by(TestScoringRange.priority).all()
+    
+    @staticmethod
+    def get_test_details(db: Session, test_definition_id: int) -> Dict[str, Any]:
+        """Get complete test details including questions, options, and scoring ranges."""
+        test_definition = db.query(TestDefinition).filter(TestDefinition.id == test_definition_id).first()
+        if not test_definition:
+            return None
+        
+        questions = TestCRUD.get_test_questions(db, test_definition_id)
+        scoring_ranges = TestCRUD.get_test_scoring_ranges(db, test_definition_id)
+        
+        # Get options for each question
+        for question in questions:
+            question.options = db.query(TestQuestionOption).filter(
+                TestQuestionOption.question_id == question.id
+            ).order_by(TestQuestionOption.display_order).all()
+        
+        return {
+            "test_definition": test_definition,
+            "questions": questions,
+            "scoring_ranges": scoring_ranges
+        }
+    
+    @staticmethod
+    def get_test_categories(db: Session) -> List[str]:
+        """Get all unique test categories."""
+        categories = db.query(TestDefinition.test_category).filter(
+            TestDefinition.is_active == True
+        ).distinct().all()
+        return [cat[0] for cat in categories]
+    
+    @staticmethod
+    def calculate_test_score(db: Session, test_definition_id: int, responses: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate test score and determine severity level."""
+        # Get test questions and options
+        questions = TestCRUD.get_test_questions(db, test_definition_id)
+        scoring_ranges = TestCRUD.get_test_scoring_ranges(db, test_definition_id)
+        
+        # Calculate total score and max possible score
+        total_score = 0
+        max_possible_score = 0
+        
+        for response in responses:
+            question_id = response.get("question_id")
+            option_id = response.get("option_id")
+            
+            # Find the question
+            question = next((q for q in questions if q.id == question_id), None)
+            if not question:
+                continue
+            
+            # Find the option
+            option = db.query(TestQuestionOption).filter(
+                TestQuestionOption.id == option_id,
+                TestQuestionOption.question_id == question_id
+            ).first()
+            if not option:
+                continue
+            
+            # Calculate score (consider reverse scoring)
+            if question.is_reverse_scored:
+                # For reverse scored questions, we need to reverse the option value
+                # Assuming options are 0-4, reverse would be 4-0
+                max_option_value = max([opt.option_value for opt in question.options])
+                score = max_option_value - option.option_value
+                # For max score calculation, use the highest possible score
+                max_question_score = max_option_value * float(option.weight)
+            else:
+                score = option.option_value
+                # For max score calculation, use the highest option value
+                max_question_score = max([opt.option_value for opt in question.options]) * float(option.weight)
+            
+            total_score += score * float(option.weight)
+            max_possible_score += max_question_score
+        
+        # Find appropriate severity range
+        severity_range = None
+        for range_obj in scoring_ranges:
+            if range_obj.min_score <= total_score <= range_obj.max_score:
+                severity_range = range_obj
+                break
+        
+        if not severity_range:
+            # Default to first range if no match found
+            severity_range = scoring_ranges[0] if scoring_ranges else None
+        
+        return {
+            "calculated_score": int(total_score),
+            "max_score": int(max_possible_score),
+            "severity_level": severity_range.severity_level if severity_range else "unknown",
+            "severity_label": severity_range.severity_label if severity_range else "Unknown",
+            "interpretation": severity_range.interpretation if severity_range else "Unable to interpret score",
+            "recommendations": severity_range.recommendations if severity_range else None,
+            "color_code": severity_range.color_code if severity_range else "#6B7280"
+        }
+    
+    @staticmethod
+    def create_test_assessment(
+        db: Session,
+        user_id: int,
+        test_definition_id: int,
+        responses: List[Dict[str, Any]],
+        calculated_score: int,
+        max_score: int,
+        severity_level: str,
+        severity_label: str,
+        interpretation: str,
+        recommendations: Optional[str],
+        color_code: Optional[str]
+    ) -> ClinicalAssessment:
+        """Create a new test assessment."""
+        # Get test definition for additional info
+        test_definition = db.query(TestDefinition).filter(TestDefinition.id == test_definition_id).first()
+        
+        db_assessment = ClinicalAssessment(
+            user_id=user_id,
+            test_definition_id=test_definition_id,
+            test_category=test_definition.test_category,
+            raw_responses=responses,
+            calculated_score=calculated_score,
+            severity_level=severity_level,
+            severity_label=severity_label,
+            # Legacy fields for backward compatibility
+            assessment_type=test_definition.test_code,
+            assessment_name=test_definition.test_name,
+            total_score=calculated_score,
+            max_score=max_score,
+            interpretation=interpretation,
+            responses=responses  # Keep for backward compatibility
+        )
+        db.add(db_assessment)
+        db.commit()
+        db.refresh(db_assessment)
+        return db_assessment
+    
+    @staticmethod
+    def get_user_test_assessments(db: Session, user_id: int, skip: int = 0, limit: int = 50) -> List[ClinicalAssessment]:
+        """Get test assessments for a specific user with pagination."""
+        return db.query(ClinicalAssessment).filter(
+            ClinicalAssessment.user_id == user_id,
+            ClinicalAssessment.test_definition_id.isnot(None)  # Only new test assessments
+        ).order_by(desc(ClinicalAssessment.created_at)).offset(skip).limit(limit).all()
+    
+    @staticmethod
+    def get_test_assessment_by_id(db: Session, assessment_id: int) -> Optional[ClinicalAssessment]:
+        """Get test assessment by ID."""
+        return db.query(ClinicalAssessment).filter(
+            ClinicalAssessment.id == assessment_id,
+            ClinicalAssessment.test_definition_id.isnot(None)
+        ).first()
