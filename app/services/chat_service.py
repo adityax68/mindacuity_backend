@@ -7,7 +7,8 @@ from openai import OpenAI
 import logging
 from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
-from app.models import ChatConversation, ChatMessage, RateLimit, User
+from pathlib import Path
+from app.models import ChatConversation, ChatMessage, RateLimit, User, ChatAttachment
 from app.schemas import ChatMessageRequest, ChatResponse
 from app.config import settings
 
@@ -291,13 +292,40 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
             # Get or create conversation
             conversation = self._create_or_get_conversation(db, user_id, chat_request.conversation_id)
             
-            # Store user message
+            # Get pre-processed attachment content if provided
+            attachment_contexts = []
+            if chat_request.attachment_ids:
+                try:
+                    attachments = db.query(ChatAttachment).filter(
+                        ChatAttachment.id.in_(chat_request.attachment_ids)
+                    ).all()
+                    
+                    for attachment in attachments:
+                        if attachment and attachment.is_processed and attachment.processed_content:
+                            attachment_contexts.append(f"Document '{attachment.original_filename}': {attachment.processed_content}")
+                            logger.info(f"Using pre-processed attachment {attachment.id}")
+                        else:
+                            attachment_contexts.append(f"Document '{attachment.original_filename}': I had trouble analyzing this document. Please try uploading again.")
+                            
+                except Exception as e:
+                    logger.error(f"Failed to get attachment content: {e}")
+                    attachment_contexts = ["I had trouble analyzing the attached documents. Please try uploading again."]
+            
+            # Combine message with attachment contexts
+            full_message = chat_request.message
+            if attachment_contexts:
+                all_contexts = "\n\n".join(attachment_contexts)
+                full_message = f"User message: {chat_request.message}\n\nDocument analysis:\n{all_contexts}"
+            
+            # Store user message (for multiple attachments, we'll store the first one as primary)
+            primary_attachment_id = chat_request.attachment_ids[0] if chat_request.attachment_ids else None
             user_message = ChatMessage(
                 conversation_id=conversation.id,
                 user_id=user_id,
                 role="user",
-                content=chat_request.message,  # Store plain text for search
-                encrypted_content=self._encrypt_message(chat_request.message)
+                content=full_message,  # Store full message with attachment context
+                encrypted_content=self._encrypt_message(full_message),
+                attachment_id=primary_attachment_id
             )
             db.add(user_message)
             db.commit()
@@ -348,11 +376,175 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
             logger.error(f"Failed to process chat message: {e}")
             raise
 
+    async def _process_attachment_with_gpt4o(self, db: Session, attachment_id: int) -> str:
+        """Process attachment with GPT-4o for document analysis"""
+        try:
+            # Get attachment record
+            attachment = db.query(ChatAttachment).filter(
+                ChatAttachment.id == attachment_id
+            ).first()
+            
+            if not attachment:
+                return "Attachment not found."
+            
+            # Check if already processed
+            if attachment.is_processed and attachment.processed_content:
+                return attachment.processed_content
+            
+            # Check if file exists
+            file_path = Path(attachment.file_path)
+            if not file_path.exists():
+                return "File no longer exists."
+            
+            # Prepare file for OpenAI
+            import base64
+            
+            with open(file_path, "rb") as file:
+                file_content = file.read()
+                
+                # For images, encode as base64
+                if attachment.file_type.startswith('image/'):
+                    base64_content = base64.b64encode(file_content).decode('utf-8')
+                    
+                    # Use GPT-4o for image analysis
+                    response = self.client.chat.completions.create(
+                        model="gpt-4o",  # Using GPT-4o for image analysis
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": """You are Acutie, a mental health AI assistant. Analyze this image for mental health related content. 
+                                
+                                Your task:
+                                1. Extract and summarize any mental health relevant information
+                                2. Identify potential issues, concerns, or symptoms visible
+                                3. Note any emotional indicators, stress factors, or psychological patterns
+                                4. Provide a brief analysis focusing on mental health aspects
+                                
+                                If this is a medical image, chart, or health document, focus on:
+                                - Mental health implications
+                                - Stress indicators
+                                - Emotional well-being factors
+                                - Any psychological symptoms or concerns
+                                
+                                Keep your analysis concise but comprehensive, focusing on mental health relevance."""
+                            },
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": f"Please analyze this {attachment.file_type} image for mental health related content and provide insights."
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:{attachment.file_type};base64,{base64_content}"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        max_tokens=1000,
+                        temperature=0.3
+                    )
+                else:
+                    # For documents, read as text and analyze
+                    try:
+                        if attachment.file_type == 'text/plain':
+                            text_content = file_content.decode('utf-8')
+                        elif attachment.file_type == 'application/pdf':
+                            # For PDF, extract text using PyPDF2 or similar
+                            try:
+                                import PyPDF2
+                                import io
+                                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+                                text_content = ""
+                                for page in pdf_reader.pages:
+                                    text_content += page.extract_text() + "\n"
+                                
+                                if not text_content.strip():
+                                    return "I can see you've uploaded a PDF document, but I couldn't extract readable text from it. Please describe the content so I can provide mental health insights and support."
+                            except ImportError:
+                                return "I can see you've uploaded a PDF document. To analyze PDF content, please install PyPDF2 or describe the content so I can provide mental health insights and support."
+                            except Exception as e:
+                                logger.error(f"PDF processing error: {e}")
+                                return "I can see you've uploaded a PDF document, but I had trouble reading it. Please describe the content so I can provide mental health insights and support."
+                        elif attachment.file_type in ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
+                            # For Word documents, we'll need python-docx
+                            try:
+                                from docx import Document
+                                import io
+                                doc = Document(io.BytesIO(file_content))
+                                text_content = ""
+                                for paragraph in doc.paragraphs:
+                                    text_content += paragraph.text + "\n"
+                                
+                                if not text_content.strip():
+                                    return "I can see you've uploaded a Word document, but I couldn't extract readable text from it. Please describe the content so I can provide mental health insights and support."
+                            except ImportError:
+                                return "I can see you've uploaded a Word document. To analyze Word documents, please install python-docx or describe the content so I can provide mental health insights and support."
+                            except Exception as e:
+                                logger.error(f"Word document processing error: {e}")
+                                return "I can see you've uploaded a Word document, but I had trouble reading it. Please describe the content so I can provide mental health insights and support."
+                        else:
+                            return "I can see you've uploaded a document. Please describe the content so I can provide mental health insights and support."
+                        
+                        # Use GPT-4o for text analysis
+                        response = self.client.chat.completions.create(
+                            model="gpt-4o",  # Using GPT-4o for text analysis
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": """You are Acutie, a mental health AI assistant. Analyze this document content for mental health related information. 
+                                    
+                                    Your task:
+                                    1. Read and understand the document content thoroughly
+                                    2. Extract and summarize any mental health relevant information
+                                    3. Identify potential issues, concerns, or symptoms mentioned
+                                    4. Note any emotional indicators, stress factors, or psychological patterns
+                                    5. Provide a comprehensive analysis focusing on mental health aspects
+                                    
+                                    Focus on:
+                                    - Mental health implications of the content
+                                    - Stress indicators or triggers mentioned
+                                    - Emotional well-being factors
+                                    - Any psychological symptoms or concerns
+                                    - Coping strategies or support needs
+                                    
+                                    IMPORTANT: Provide specific insights based on the actual content of the document. Don't give generic responses - analyze what's actually written in the document.
+                                    
+                                    Keep your analysis detailed and specific to the document content, focusing on mental health relevance."""
+                                },
+                                {
+                                    "role": "user",
+                                    "content": f"Please analyze this text content for mental health related information:\n\n{text_content}"
+                                }
+                            ],
+                            max_tokens=1000,
+                            temperature=0.3
+                        )
+                    except Exception as e:
+                        logger.error(f"Error processing document: {e}")
+                        return "I had trouble reading this document. Please describe the content so I can provide mental health insights."
+            
+            processed_content = response.choices[0].message.content.strip()
+            
+            # Update attachment record
+            attachment.is_processed = True
+            attachment.processed_content = processed_content
+            db.commit()
+            
+            return processed_content
+            
+        except Exception as e:
+            logger.error(f"Failed to process attachment with GPT-5: {e}")
+            return f"I had trouble analyzing this document. Error: {str(e)}"
+
     async def _get_ai_response(self, messages: List[Dict[str, str]]) -> str:
         """Get response from OpenAI"""
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o",  # Using GPT-4o for chat responses
                 messages=messages,
                 max_tokens=500,
                 temperature=0.7

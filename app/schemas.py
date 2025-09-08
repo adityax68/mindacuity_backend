@@ -214,6 +214,18 @@ class QuestionsResponse(BaseModel):
 class ChatMessageRequest(BaseModel):
     message: str
     conversation_id: Optional[int] = None
+    attachment_ids: Optional[List[int]] = None  # NEW: Support for multiple attachments
+
+class FileUploadResponse(BaseModel):
+    file_id: int
+    filename: str
+    file_size: int
+    file_type: str
+    upload_url: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
 
 class ChatMessageResponse(BaseModel):
     id: int

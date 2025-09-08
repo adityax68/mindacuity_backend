@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.auth import get_current_active_user
+from app.auth import get_current_active_user, require_privilege
 from app.crud import ComplaintCRUD, EmployeeCRUD
 from app.schemas import User, Complaint, ComplaintCreate, ComplaintUpdate
+from app.services.role_service import RoleService, get_role_service
 from typing import List
 import logging
 
@@ -86,18 +87,20 @@ async def resolve_complaint(
     complaint_id: int,
     complaint_update: ComplaintUpdate,
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
 ):
     """
     Resolve a complaint (HR only).
-    Only accessible to users with 'hr' role.
+    Only accessible to users with 'manage_complaints' privilege.
     """
     try:
-        # Check if user has HR role
-        if current_user.role != "hr":
+        # Check if user has manage_complaints privilege
+        has_privilege = await role_service.user_has_privilege(current_user.id, "manage_complaints")
+        if not has_privilege:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. HR role required."
+                detail="Access denied. HR privilege required to manage complaints."
             )
         
         # Get complaint
@@ -141,18 +144,20 @@ async def resolve_complaint(
 @router.get("/hr/all-complaints")
 async def get_hr_complaints(
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
 ):
     """
     Get all complaints for HR to manage (both identified and anonymous).
-    Only accessible to users with 'hr' role.
+    Only accessible to users with 'manage_complaints' privilege.
     """
     try:
-        # Check if user has HR role
-        if current_user.role != "hr":
+        # Check if user has manage_complaints privilege
+        has_privilege = await role_service.user_has_privilege(current_user.id, "manage_complaints")
+        if not has_privilege:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. HR role required."
+                detail="Access denied. HR privilege required to manage complaints."
             )
         
         # Get all complaints for this HR

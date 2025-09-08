@@ -1,7 +1,8 @@
 from sqlalchemy.orm import Session
 from app.models import User, Role, Privilege, user_privileges, role_privileges
 from typing import List, Set
-from fastapi import HTTPException
+from fastapi import HTTPException, Depends
+from app.database import get_db
 
 class RoleService:
     def __init__(self, db: Session):
@@ -33,6 +34,11 @@ class RoleService:
             # Organisation management privileges
             {"name": "manage_organisations", "description": "Create, update, and delete organisations", "category": "organisation_management"},
             {"name": "read_organisations", "description": "View organisation details and lists", "category": "organisation_management"},
+            
+            # HR management privileges
+            {"name": "manage_complaints", "description": "Create, read, update, and resolve complaints", "category": "hr_management"},
+            {"name": "manage_employees", "description": "Create, read, update, and manage employee records", "category": "hr_management"},
+            {"name": "view_employee_data", "description": "View employee assessments, complaints, and personal data", "category": "hr_management"},
         ]
         
         # Create privileges if they don't exist
@@ -82,7 +88,8 @@ class RoleService:
         ])
         
         await self.assign_privileges_to_role("hr", [
-            "take_assessment", "read_own_assessments", "read_all_assessments", "read_users", "view_analytics"
+            "take_assessment", "read_own_assessments", "read_all_assessments", "read_users", "view_analytics",
+            "manage_complaints", "manage_employees", "view_employee_data", "create_users", "update_users"
         ])
         
         await self.assign_privileges_to_role("counsellor", [
@@ -150,4 +157,8 @@ class RoleService:
                 
                 return await func(*args, **kwargs)
             return wrapper
-        return decorator 
+        return decorator
+
+# Dependency function for FastAPI
+def get_role_service(db: Session = Depends(get_db)) -> RoleService:
+    return RoleService(db) 
