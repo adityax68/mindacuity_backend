@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_user, require_role
-from app.models import User, Role, Privilege
-from app.schemas import UserResponse, RoleResponse, PrivilegeResponse, UserRoleUpdate, OrganisationCreate, OrganisationResponse
+from app.models import User, Role, Privilege, Employee as EmployeeModel, Organisation
+from app.schemas import UserResponse, RoleResponse, PrivilegeResponse, UserRoleUpdate, OrganisationCreate, OrganisationResponse, Employee
 from app.services.role_service import RoleService
 from app.crud import OrganisationCRUD
 from typing import List
@@ -16,7 +16,7 @@ def get_role_service(db: Session = Depends(get_db)) -> RoleService:
 @router.get("/users", response_model=List[UserResponse])
 async def get_all_users(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 10,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     role_service: RoleService = Depends(get_role_service)
@@ -26,7 +26,7 @@ async def get_all_users(
     if not has_privilege:
         raise HTTPException(status_code=403, detail="Insufficient privileges")
     
-    users = db.query(User).offset(skip).limit(limit).all()
+    users = db.query(User).order_by(User.created_at.desc()).offset(skip).limit(limit).all()
     
     # Get privileges for each user
     user_responses = []
@@ -184,10 +184,68 @@ async def create_organisation(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create organisation: {str(e)}")
 
+@router.get("/test-analytics")
+async def get_test_analytics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Get test analytics (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "read_all_assessments")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    try:
+        from app.models import ClinicalAssessment, Employee as EmployeeModel
+        from sqlalchemy import func
+        from datetime import datetime, timedelta
+        
+        # Total tests given
+        total_tests = db.query(ClinicalAssessment).count()
+        
+        # Total tests given by employees
+        employee_tests = db.query(ClinicalAssessment).join(EmployeeModel, ClinicalAssessment.user_id == EmployeeModel.user_id).count()
+        
+        # Tests by assessment type
+        tests_by_type = db.query(
+            ClinicalAssessment.assessment_type,
+            func.count(ClinicalAssessment.id).label('count')
+        ).group_by(ClinicalAssessment.assessment_type).all()
+        
+        # Tests by organization
+        tests_by_org = db.query(
+            EmployeeModel.org_id,
+            func.count(ClinicalAssessment.id).label('count')
+        ).join(ClinicalAssessment, EmployeeModel.user_id == ClinicalAssessment.user_id).group_by(EmployeeModel.org_id).all()
+        
+        # Recent tests (last 30 days)
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        recent_tests = db.query(ClinicalAssessment).filter(
+            ClinicalAssessment.created_at >= thirty_days_ago
+        ).count()
+        
+        # Tests by severity level
+        tests_by_severity = db.query(
+            ClinicalAssessment.severity_level,
+            func.count(ClinicalAssessment.id).label('count')
+        ).group_by(ClinicalAssessment.severity_level).all()
+        
+        return {
+            "total_tests": total_tests,
+            "employee_tests": employee_tests,
+            "recent_tests": recent_tests,
+            "tests_by_type": [{"type": t[0], "count": t[1]} for t in tests_by_type],
+            "tests_by_organization": [{"org_id": t[0], "count": t[1]} for t in tests_by_org],
+            "tests_by_severity": [{"severity": t[0], "count": t[1]} for t in tests_by_severity]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch test analytics: {str(e)}")
+
 @router.get("/organisations", response_model=List[OrganisationResponse])
 async def get_all_organisations(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 10,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     role_service: RoleService = Depends(get_role_service)
@@ -197,8 +255,18 @@ async def get_all_organisations(
     if not has_privilege:
         raise HTTPException(status_code=403, detail="Insufficient privileges")
     
-    organisations = OrganisationCRUD.get_all_organisations(db, skip=skip, limit=limit)
-    return organisations
+    organisations = db.query(Organisation).order_by(Organisation.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # Convert to response format
+    from app.schemas import OrganisationResponse
+    return [OrganisationResponse(
+        id=org.id,
+        org_id=org.org_id,
+        org_name=org.org_name,
+        hr_email=org.hr_email,
+        created_at=org.created_at,
+        updated_at=org.updated_at
+    ) for org in organisations]
 
 @router.get("/stats")
 async def get_admin_stats(
@@ -292,3 +360,119 @@ async def get_weekly_user_stats(
         import logging
         logging.error(f"Error fetching weekly user stats: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/users/search")
+async def search_users(
+    email: str = None,
+    skip: int = 0,
+    limit: int = 10,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Search users by email (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "read_users")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    query = db.query(User)
+    
+    if email:
+        # Use case-insensitive search with proper indexing
+        query = query.filter(User.email.ilike(f"%{email.lower()}%"))
+    
+    users = query.order_by(User.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # Get privileges for each user
+    user_responses = []
+    for user in users:
+        privileges = await role_service.get_user_privileges(user.id)
+        user_responses.append(UserResponse(
+            id=user.id,
+            email=user.email,
+            username=user.username,
+            full_name=user.full_name,
+            role=user.role,
+            privileges=list(privileges),
+            is_active=user.is_active,
+            created_at=user.created_at
+        ))
+    
+    return user_responses
+
+@router.get("/employees", response_model=List[Employee])
+async def get_all_employees(
+    skip: int = 0,
+    limit: int = 10,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Get all employees (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "manage_employees")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    employees = db.query(EmployeeModel).order_by(EmployeeModel.created_at.desc()).offset(skip).limit(limit).all()
+    return employees
+
+@router.get("/employees/search")
+async def search_employees(
+    employee_code: str = None,
+    skip: int = 0,
+    limit: int = 10,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Search employees by employee code (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "manage_employees")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    query = db.query(EmployeeModel)
+    
+    if employee_code:
+        # Use case-insensitive search with proper indexing
+        query = query.filter(EmployeeModel.employee_code.ilike(f"%{employee_code.upper()}%"))
+    
+    employees = query.order_by(EmployeeModel.created_at.desc()).offset(skip).limit(limit).all()
+    return employees
+
+@router.get("/organisations/search")
+async def search_organisations(
+    org_id: str = None,
+    hr_email: str = None,
+    skip: int = 0,
+    limit: int = 10,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Search organisations by org ID or HR email (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "read_organisations")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    query = db.query(Organisation)
+    
+    if org_id:
+        # Use case-insensitive search with proper indexing
+        query = query.filter(Organisation.org_id.ilike(f"%{org_id.upper()}%"))
+    
+    if hr_email:
+        # Use case-insensitive search with proper indexing
+        query = query.filter(Organisation.hr_email.ilike(f"%{hr_email.lower()}%"))
+    
+    organisations = query.order_by(Organisation.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # Convert to response format
+    from app.schemas import OrganisationResponse
+    return [OrganisationResponse(
+        id=org.id,
+        org_id=org.org_id,
+        org_name=org.org_name,
+        hr_email=org.hr_email,
+        created_at=org.created_at,
+        updated_at=org.updated_at
+    ) for org in organisations]
