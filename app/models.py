@@ -186,6 +186,8 @@ class Complaint(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)  # Optional for anonymous complaints
+    org_id = Column(String, nullable=True)  # Organization ID for efficient querying
+    hr_email = Column(String, nullable=True)  # HR email for efficient querying
     complaint_text = Column(Text, nullable=False)
     status = Column(String, default="pending")  # pending, resolved
     hr_notes = Column(Text, nullable=True)

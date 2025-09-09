@@ -111,13 +111,26 @@ async def resolve_complaint(
                 detail="Complaint not found"
             )
         
-        # Get employee and verify HR has access
-        employee = EmployeeCRUD.get_employee_by_id(db, complaint.employee_id)
-        if not employee or employee.hr_email != current_user.email:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. You can only manage complaints from your employees."
-            )
+        # Verify HR has access to this complaint
+        # HR can manage complaints from their organization (both identified and anonymous)
+        if complaint.employee_id is not None:
+            # For identified complaints, check access using the stored org_id and hr_email
+            hr_employee = EmployeeCRUD.get_employee_by_user_id(db, current_user.id)
+            has_access = False
+            
+            if hr_employee and hr_employee.org_id and complaint.org_id:
+                # Check if both HR and complaint are in the same organization
+                has_access = (hr_employee.org_id == complaint.org_id)
+            elif complaint.hr_email:
+                # Fallback to HR email-based access
+                has_access = (complaint.hr_email == current_user.email)
+            
+            if not has_access:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied. You can only manage complaints from your organization or managed employees."
+                )
+        # For anonymous complaints (employee_id is None), any HR with manage_complaints privilege can resolve them
         
         # Update complaint status
         updated_complaint = ComplaintCRUD.update_complaint_status(
@@ -160,8 +173,8 @@ async def get_hr_complaints(
                 detail="Access denied. HR privilege required to manage complaints."
             )
         
-        # Get all complaints for this HR
-        complaints = ComplaintCRUD.get_all_complaints_for_hr(db, current_user.email)
+        # Get all complaints for this HR (try organization-based first, fallback to email-based)
+        complaints = ComplaintCRUD.get_all_complaints_for_hr(db, current_user.id, current_user.email)
         
         logger.info(f"HR {current_user.email} fetched {len(complaints)} complaints")
         
