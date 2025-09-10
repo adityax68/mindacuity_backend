@@ -5,6 +5,8 @@ from fastapi import HTTPException, Depends
 from app.database import get_db
 
 class RoleService:
+    """Role service for managing user roles and privileges"""
+    
     def __init__(self, db: Session):
         self.db = db
     

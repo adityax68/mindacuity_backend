@@ -1,11 +1,53 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from app.services.file_cleanup_service import run_cleanup_task
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models import ChatAttachment
+from pathlib import Path
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def simple_cleanup_task():
+    """Simple cleanup task for expired chat attachments"""
+    try:
+        db = next(get_db())
+        
+        # Find expired attachments
+        expired_attachments = db.query(ChatAttachment).filter(
+            ChatAttachment.expires_at < datetime.utcnow()
+        ).all()
+        
+        cleaned_count = 0
+        for attachment in expired_attachments:
+            try:
+                # Delete physical file if it exists
+                if attachment.file_path and os.path.exists(attachment.file_path):
+                    os.unlink(attachment.file_path)
+                    logger.info(f"Deleted expired file: {attachment.file_path}")
+                
+                # Delete database record
+                db.delete(attachment)
+                cleaned_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error cleaning up attachment {attachment.id}: {e}")
+                # Still delete the database record
+                db.delete(attachment)
+                cleaned_count += 1
+        
+        db.commit()
+        logger.info(f"Cleaned up {cleaned_count} expired attachments")
+        return {"cleaned": cleaned_count}
+        
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
 
 class CleanupScheduler:
     """Simple scheduler for running cleanup tasks"""
@@ -26,7 +68,7 @@ class CleanupScheduler:
         while self.running:
             try:
                 # Run cleanup task
-                result = run_cleanup_task()
+                result = simple_cleanup_task()
                 logger.info(f"Cleanup task result: {result}")
                 
                 # Wait for next cleanup

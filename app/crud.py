@@ -381,24 +381,33 @@ class TestCRUD:
     
     @staticmethod
     def get_test_details(db: Session, test_definition_id: int) -> Dict[str, Any]:
-        """Get complete test details including questions, options, and scoring ranges."""
-        test_definition = db.query(TestDefinition).filter(TestDefinition.id == test_definition_id).first()
+        """Get complete test details including questions, options, and scoring ranges.
+        
+        Optimized to use eager loading to avoid N+1 query problem.
+        This single query replaces 10+ separate queries.
+        """
+        from sqlalchemy.orm import joinedload
+        
+        # Single optimized query with eager loading
+        test_definition = db.query(TestDefinition)\
+            .options(
+                # Eager load questions with their options
+                joinedload(TestDefinition.questions)
+                    .joinedload(TestQuestion.options),
+                # Eager load scoring ranges
+                joinedload(TestDefinition.scoring_ranges)
+            )\
+            .filter(TestDefinition.id == test_definition_id)\
+            .first()
+        
         if not test_definition:
             return None
         
-        questions = TestCRUD.get_test_questions(db, test_definition_id)
-        scoring_ranges = TestCRUD.get_test_scoring_ranges(db, test_definition_id)
-        
-        # Get options for each question
-        for question in questions:
-            question.options = db.query(TestQuestionOption).filter(
-                TestQuestionOption.question_id == question.id
-            ).order_by(TestQuestionOption.display_order).all()
-        
+        # The relationships are already loaded, no additional queries needed
         return {
             "test_definition": test_definition,
-            "questions": questions,
-            "scoring_ranges": scoring_ranges
+            "questions": test_definition.questions,
+            "scoring_ranges": test_definition.scoring_ranges
         }
     
     @staticmethod

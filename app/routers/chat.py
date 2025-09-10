@@ -11,7 +11,7 @@ from app.auth import get_current_user
 from app.models import User, ChatAttachment
 from app.schemas import ChatMessageRequest, ChatResponse, ChatConversationResponse, FileUploadResponse
 from app.services.chat_service import ChatService
-from app.services.file_cleanup_service import cleanup_service
+# Removed file cleanup service - using simple scheduler instead
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -327,58 +327,4 @@ async def get_file(
             detail=f"Failed to retrieve file: {str(e)}"
         )
 
-@router.post("/cleanup")
-async def cleanup_files(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Clean up expired files (admin only)"""
-    try:
-        # Check if user is admin
-        if current_user.role != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin access required"
-            )
-        
-        expired_count = cleanup_service.cleanup_expired_files(db)
-        orphaned_count = cleanup_service.cleanup_orphaned_files(db)
-        
-        return {
-            "message": "Cleanup completed",
-            "expired_files_cleaned": expired_count,
-            "orphaned_files_cleaned": orphaned_count
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Cleanup failed: {str(e)}"
-        )
-
-@router.get("/storage-stats")
-async def get_storage_stats(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get storage statistics (admin only)"""
-    try:
-        # Check if user is admin
-        if current_user.role != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin access required"
-            )
-        
-        stats = cleanup_service.get_storage_stats(db)
-        return stats
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get storage stats: {str(e)}"
-        ) 
+# Removed cleanup endpoints - using simple scheduler instead 

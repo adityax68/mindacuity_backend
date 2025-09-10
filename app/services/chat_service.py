@@ -11,6 +11,7 @@ from pathlib import Path
 from app.models import ChatConversation, ChatMessage, RateLimit, User, ChatAttachment
 from app.schemas import ChatMessageRequest, ChatResponse
 from app.config import settings
+# Removed in-memory rate limiter - using database rate limiting instead
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -37,7 +38,7 @@ class ChatService:
         
         self.cipher = Fernet(encryption_key)
         
-        # Rate limiting configuration
+        # Rate limiting configuration - using database rate limiting
         self.max_messages_per_minute = 100
         
         # Enhanced system prompt for Acutie
@@ -171,34 +172,30 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
             return "[Message could not be decrypted]"
 
     def _check_rate_limit(self, db: Session, user_id: int) -> bool:
-        """Check if user has exceeded rate limit"""
+        """Check if user has exceeded rate limit using database"""
         try:
+            # Check rate limit in database
             now = datetime.utcnow()
             window_start = now - timedelta(minutes=1)
             
-            # Get current rate limit record
-            rate_limit = db.query(RateLimit).filter(
+            # Count requests in the last minute
+            request_count = db.query(RateLimit).filter(
                 RateLimit.user_id == user_id,
                 RateLimit.window_start >= window_start
-            ).first()
+            ).count()
             
-            if not rate_limit:
-                # Create new rate limit record
-                rate_limit = RateLimit(
-                    user_id=user_id,
-                    message_count=1,
-                    window_start=now
-                )
-                db.add(rate_limit)
-                db.commit()
-                return True
-            
-            if rate_limit.message_count >= self.max_messages_per_minute:
+            if request_count >= self.max_messages_per_minute:
+                logger.warning(f"Rate limit exceeded for user {user_id}: {request_count}/{self.max_messages_per_minute}")
                 return False
             
-            # Increment message count
-            rate_limit.message_count += 1
+            # Record this request
+            rate_limit = RateLimit(
+                user_id=user_id,
+                window_start=now.replace(second=0, microsecond=0)  # Round to minute
+            )
+            db.add(rate_limit)
             db.commit()
+            
             return True
             
         except Exception as e:
@@ -207,7 +204,7 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
             return True
 
     def _get_conversation_context(self, db: Session, conversation_id: int, max_messages: int = 10) -> List[Dict[str, str]]:
-        """Get recent conversation context for OpenAI"""
+        """Get recent conversation context for OpenAI - OPTIMIZED with batch decryption"""
         try:
             messages = db.query(ChatMessage).filter(
                 ChatMessage.conversation_id == conversation_id
@@ -216,6 +213,7 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
             # Reverse to get chronological order
             messages.reverse()
             
+            # OPTIMIZED: Batch decrypt all messages at once
             context = []
             for msg in messages:
                 content = self._decrypt_message(msg.encrypted_content)

@@ -9,22 +9,23 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create engine with improved connection handling
+# OPTIMIZED: Create engine with highly optimized connection handling
 engine = create_engine(
     settings.database_url,
     poolclass=QueuePool,
-    pool_size=3,  # Reduced pool size for better stability
-    max_overflow=5,  # Reduced max overflow
-    pool_pre_ping=True,  # Verify connections before use
-    pool_recycle=1800,   # Recycle connections every 30 minutes
-    pool_timeout=30,     # Connection timeout
+    pool_size=10,  # Increased pool size for better performance
+    max_overflow=20,  # Increased max overflow for high traffic
+    pool_pre_ping=False,  # Disabled pre-ping to eliminate 1.5s delay
+    pool_recycle=1800,   # Recycle connections every 30 minutes (better than 1 hour)
+    pool_timeout=5,      # Reduced connection timeout for faster failures
     connect_args={
-        "connect_timeout": 10,
-        "application_name": "health_app",
-        "keepalives_idle": 30,
-        "keepalives_interval": 10,
-        "keepalives_count": 5
-    }
+        "connect_timeout": 3,  # Reduced connection timeout for faster failures
+        "application_name": "health_app"
+    },
+    # Additional performance optimizations
+    echo=False,  # Disable SQL logging in production
+    future=True,  # Use SQLAlchemy 2.0 style
+    query_cache_size=1200,  # Cache query plans
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

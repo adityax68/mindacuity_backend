@@ -59,15 +59,36 @@ def get_test_details(
     test_code: str,
     db: Session = Depends(get_db)
 ):
-    """Get detailed information about a specific test including questions and scoring ranges."""
-    test_definition = TestCRUD.get_test_definition_by_code(db, test_code)
+    """Get detailed information about a specific test including questions and scoring ranges.
+    
+    Optimized to use single query instead of two separate queries.
+    """
+    from sqlalchemy.orm import joinedload
+    
+    # Single optimized query with eager loading
+    test_definition = db.query(TestDefinition)\
+        .options(
+            # Eager load questions with their options
+            joinedload(TestDefinition.questions)
+                .joinedload(TestQuestion.options),
+            # Eager load scoring ranges
+            joinedload(TestDefinition.scoring_ranges)
+        )\
+        .filter(TestDefinition.test_code == test_code)\
+        .first()
+    
     if not test_definition:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Test with code '{test_code}' not found"
         )
     
-    return TestCRUD.get_test_details(db, test_definition.id)
+    # Return the optimized structure
+    return {
+        "test_definition": test_definition,
+        "questions": test_definition.questions,
+        "scoring_ranges": test_definition.scoring_ranges
+    }
 
 @router.get("/categories")
 def get_test_categories(db: Session = Depends(get_db)):

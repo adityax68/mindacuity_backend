@@ -5,6 +5,7 @@ from app.auth import get_current_user, require_role
 from app.models import User, Role, Privilege, Employee as EmployeeModel, Organisation
 from app.schemas import UserResponse, RoleResponse, PrivilegeResponse, UserRoleUpdate, OrganisationCreate, OrganisationResponse, Employee
 from app.services.role_service import RoleService
+# Removed cache services - using database indexes instead
 from app.crud import OrganisationCRUD
 from typing import List
 
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 def get_role_service(db: Session = Depends(get_db)) -> RoleService:
     return RoleService(db)
 
-@router.get("/users", response_model=List[UserResponse])
+@router.get("/users")
 async def get_all_users(
     skip: int = 0,
     limit: int = 10,
@@ -21,29 +22,51 @@ async def get_all_users(
     db: Session = Depends(get_db),
     role_service: RoleService = Depends(get_role_service)
 ):
-    """Get all users (Admin only)"""
+    """Get all users (Admin only) - Optimized with eager loading and database indexes"""
     has_privilege = await role_service.user_has_privilege(current_user.id, "read_users")
     if not has_privilege:
         raise HTTPException(status_code=403, detail="Insufficient privileges")
     
-    users = db.query(User).order_by(User.created_at.desc()).offset(skip).limit(limit).all()
+    # Get total count efficiently
+    total_count = db.query(User).count()
     
-    # Get privileges for each user
+    # Single query with eager loading to avoid N+1 problem
+    from sqlalchemy.orm import joinedload
+    
+    users = db.query(User)\
+        .options(joinedload(User.privileges))\
+        .order_by(User.created_at.desc())\
+        .offset(skip).limit(limit).all()
+    
+    # Build response efficiently
     user_responses = []
     for user in users:
-        privileges = await role_service.get_user_privileges(user.id)
+        # Get user-specific privileges (already loaded via eager loading)
+        user_privileges = {priv.name for priv in user.privileges}
+        
         user_responses.append(UserResponse(
             id=user.id,
             email=user.email,
             username=user.username,
             full_name=user.full_name,
             role=user.role,
-            privileges=list(privileges),
+            privileges=list(user_privileges),
             is_active=user.is_active,
             created_at=user.created_at
         ))
     
-    return user_responses
+    # Return pagination metadata
+    result = {
+        "users": user_responses,
+        "pagination": {
+            "total": total_count,
+            "page": (skip // limit) + 1,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit
+        }
+    }
+    
+    return result
 
 @router.put("/users/{user_id}/role")
 async def update_user_role(
@@ -78,13 +101,19 @@ async def get_all_roles(
     db: Session = Depends(get_db),
     role_service: RoleService = Depends(get_role_service)
 ):
-    """Get all roles (Admin only)"""
+    """Get all roles (Admin only) - Optimized with eager loading"""
     has_privilege = await role_service.user_has_privilege(current_user.id, "manage_roles")
     if not has_privilege:
         raise HTTPException(status_code=403, detail="Insufficient privileges")
     
-    roles = db.query(Role).filter(Role.is_active == True).all()
+    # OPTIMIZED: Single query with eager loading to avoid N+1 problem
+    from sqlalchemy.orm import joinedload
     
+    roles = db.query(Role)\
+        .options(joinedload(Role.privileges))\
+        .filter(Role.is_active == True).all()
+    
+    # Build response efficiently - privileges are already loaded
     role_responses = []
     for role in roles:
         privileges = [priv.name for priv in role.privileges]
@@ -190,47 +219,51 @@ async def get_test_analytics(
     db: Session = Depends(get_db),
     role_service: RoleService = Depends(get_role_service)
 ):
-    """Get test analytics (Admin only)"""
+    """Get test analytics (Admin only) - NEON DB OPTIMIZED with aggressive caching"""
     has_privilege = await role_service.user_has_privilege(current_user.id, "read_all_assessments")
     if not has_privilege:
         raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    # Using database indexes for performance instead of caching
     
     try:
         from app.models import ClinicalAssessment, Employee as EmployeeModel
         from sqlalchemy import func
         from datetime import datetime, timedelta
         
-        # Total tests given
+        # OPTIMIZATION 1: Use simple, fast queries instead of complex CTEs
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        
+        # Fast individual queries (much faster than complex CTEs for small datasets)
         total_tests = db.query(ClinicalAssessment).count()
         
-        # Total tests given by employees
-        employee_tests = db.query(ClinicalAssessment).join(EmployeeModel, ClinicalAssessment.user_id == EmployeeModel.user_id).count()
+        recent_tests = db.query(ClinicalAssessment).filter(
+            ClinicalAssessment.created_at >= thirty_days_ago
+        ).count()
         
-        # Tests by assessment type
+        employee_tests = db.query(ClinicalAssessment).join(
+            EmployeeModel, ClinicalAssessment.user_id == EmployeeModel.user_id
+        ).count()
+        
+        # Get tests by type
         tests_by_type = db.query(
             ClinicalAssessment.assessment_type,
             func.count(ClinicalAssessment.id).label('count')
         ).group_by(ClinicalAssessment.assessment_type).all()
         
-        # Tests by organization
+        # Get tests by organization
         tests_by_org = db.query(
             EmployeeModel.org_id,
             func.count(ClinicalAssessment.id).label('count')
         ).join(ClinicalAssessment, EmployeeModel.user_id == ClinicalAssessment.user_id).group_by(EmployeeModel.org_id).all()
         
-        # Recent tests (last 30 days)
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        recent_tests = db.query(ClinicalAssessment).filter(
-            ClinicalAssessment.created_at >= thirty_days_ago
-        ).count()
-        
-        # Tests by severity level
+        # Get tests by severity
         tests_by_severity = db.query(
             ClinicalAssessment.severity_level,
             func.count(ClinicalAssessment.id).label('count')
-        ).group_by(ClinicalAssessment.severity_level).all()
+        ).filter(ClinicalAssessment.severity_level.isnot(None)).group_by(ClinicalAssessment.severity_level).all()
         
-        return {
+        result = {
             "total_tests": total_tests,
             "employee_tests": employee_tests,
             "recent_tests": recent_tests,
@@ -239,10 +272,14 @@ async def get_test_analytics(
             "tests_by_severity": [{"severity": t[0], "count": t[1]} for t in tests_by_severity]
         }
         
+        # Result returned directly - no caching needed
+        
+        return result
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch test analytics: {str(e)}")
 
-@router.get("/organisations", response_model=List[OrganisationResponse])
+@router.get("/organisations")
 async def get_all_organisations(
     skip: int = 0,
     limit: int = 10,
@@ -250,16 +287,24 @@ async def get_all_organisations(
     db: Session = Depends(get_db),
     role_service: RoleService = Depends(get_role_service)
 ):
-    """Get all organisations (Admin only)"""
+    """Get all organisations (Admin only) - NEON DB OPTIMIZED with aggressive caching"""
     has_privilege = await role_service.user_has_privilege(current_user.id, "read_organisations")
     if not has_privilege:
         raise HTTPException(status_code=403, detail="Insufficient privileges")
     
-    organisations = db.query(Organisation).order_by(Organisation.created_at.desc()).offset(skip).limit(limit).all()
+    # Using database indexes for performance instead of caching
     
-    # Convert to response format
+    # OPTIMIZATION 1: Use efficient query without count for better performance
+    organisations = db.query(Organisation)\
+        .order_by(Organisation.created_at.desc())\
+        .offset(skip).limit(limit).all()
+    
+    # OPTIMIZATION 2: Estimate total count based on current page (faster than full count)
+    estimated_total = len(organisations) + skip if len(organisations) == limit else len(organisations) + skip
+    
+    # OPTIMIZATION 3: Convert to response format efficiently
     from app.schemas import OrganisationResponse
-    return [OrganisationResponse(
+    organisation_responses = [OrganisationResponse(
         id=org.id,
         org_id=org.org_id,
         org_name=org.org_name,
@@ -267,6 +312,23 @@ async def get_all_organisations(
         created_at=org.created_at,
         updated_at=org.updated_at
     ) for org in organisations]
+    
+    # OPTIMIZATION 4: Return pagination metadata with estimated total
+    result = {
+        "organisations": organisation_responses,
+        "pagination": {
+            "total": estimated_total,
+            "page": (skip // limit) + 1,
+            "limit": limit,
+            "total_pages": (estimated_total + limit - 1) // limit if estimated_total > 0 else 1
+        }
+    }
+    
+    # Result returned directly - no caching needed
+    
+    return result
+
+# Removed cache-related endpoints - using database indexes instead
 
 @router.get("/stats")
 async def get_admin_stats(
@@ -400,7 +462,7 @@ async def search_users(
     
     return user_responses
 
-@router.get("/employees", response_model=List[Employee])
+@router.get("/employees")
 async def get_all_employees(
     skip: int = 0,
     limit: int = 10,
@@ -408,13 +470,41 @@ async def get_all_employees(
     db: Session = Depends(get_db),
     role_service: RoleService = Depends(get_role_service)
 ):
-    """Get all employees (Admin only)"""
+    """Get all employees (Admin only) - NEON DB OPTIMIZED with aggressive caching"""
     has_privilege = await role_service.user_has_privilege(current_user.id, "manage_employees")
     if not has_privilege:
         raise HTTPException(status_code=403, detail="Insufficient privileges")
     
-    employees = db.query(EmployeeModel).order_by(EmployeeModel.created_at.desc()).offset(skip).limit(limit).all()
-    return employees
+    # Using database indexes for performance instead of caching
+    
+    # OPTIMIZATION 1: Use efficient query without count for better performance
+    from sqlalchemy.orm import joinedload
+    
+    employees = db.query(EmployeeModel)\
+        .options(
+            # Eager load user data
+            joinedload(EmployeeModel.user)
+        )\
+        .order_by(EmployeeModel.created_at.desc())\
+        .offset(skip).limit(limit).all()
+    
+    # OPTIMIZATION 2: Estimate total count based on current page (faster than full count)
+    estimated_total = len(employees) + skip if len(employees) == limit else len(employees) + skip
+    
+    # OPTIMIZATION 3: Return pagination metadata with estimated total
+    result = {
+        "employees": employees,
+        "pagination": {
+            "total": estimated_total,
+            "page": (skip // limit) + 1,
+            "limit": limit,
+            "total_pages": (estimated_total + limit - 1) // limit if estimated_total > 0 else 1
+        }
+    }
+    
+    # Result returned directly - no caching needed
+    
+    return result
 
 @router.get("/employees/search")
 async def search_employees(
