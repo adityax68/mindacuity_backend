@@ -56,6 +56,10 @@ def seed_database():
             username="testuser",
             hashed_password=get_password_hash("testpassword123"),
             full_name="Test User",
+            age=25,  # Add required age field
+            country="India",  # Add optional profile fields
+            state="Maharashtra",
+            city="Mumbai",
             is_active=True
         )
         

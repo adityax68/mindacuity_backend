@@ -33,7 +33,12 @@ class UserCRUD:
             username=user.username,
             full_name=user.full_name,
             hashed_password=hashed_password,
-            role=getattr(user, 'role', 'user')  # NEW: Add role field with default
+            role=getattr(user, 'role', 'user'),  # NEW: Add role field with default
+            age=user.age,  # NEW: Add age field
+            country=getattr(user, 'country', None),  # NEW: Add optional profile fields
+            state=getattr(user, 'state', None),
+            city=getattr(user, 'city', None),
+            pincode=getattr(user, 'pincode', None)
         )
         db.add(db_user)
         db.commit()

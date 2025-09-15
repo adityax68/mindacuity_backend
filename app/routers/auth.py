@@ -24,6 +24,11 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     - **username**: User's username (must be unique)
     - **password**: User's password (will be hashed)
     - **full_name**: User's full name (optional)
+    - **age**: User's age (required, 1-120)
+    - **country**: User's country (optional)
+    - **state**: User's state (optional)
+    - **city**: User's city (optional)
+    - **pincode**: User's pincode (optional)
     - **role**: User's role (defaults to "user")
     """
     try:
@@ -127,6 +132,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
             role=user.role,
             privileges=list(privileges),
             is_active=user.is_active,
+            age=user.age,
+            country=user.country,
+            state=user.state,
+            city=user.city,
+            pincode=user.pincode,
             created_at=user.created_at
         )
         
@@ -169,5 +179,10 @@ async def read_users_me(current_user: User = Depends(get_current_active_user), d
         role=current_user.role,
         privileges=list(privileges),
         is_active=current_user.is_active,
+        age=current_user.age,
+        country=current_user.country,
+        state=current_user.state,
+        city=current_user.city,
+        pincode=current_user.pincode,
         created_at=current_user.created_at
     ) 

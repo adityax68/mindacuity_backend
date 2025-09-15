@@ -12,6 +12,12 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
     role: Optional[str] = "user"  # NEW: Add role field
+    # NEW: User profile fields
+    age: int = Field(..., ge=1, le=120, description="Age must be between 1 and 120")
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    pincode: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -22,6 +28,12 @@ class User(UserBase):
     role: str  # NEW: Add role field
     privileges: List[str]  # NEW: Add privileges
     is_active: bool
+    # NEW: User profile fields
+    age: int
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    pincode: Optional[str] = None
     created_at: datetime
     
     class Config:
@@ -36,6 +48,12 @@ class UserResponse(BaseModel):
     role: str
     privileges: List[str]
     is_active: bool
+    # NEW: User profile fields
+    age: int
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    pincode: Optional[str] = None
     created_at: datetime
     
     class Config:

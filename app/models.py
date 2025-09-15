@@ -28,6 +28,13 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     full_name = Column(String)
     
+    # NEW: User profile fields
+    age = Column(Integer, nullable=False)  # Mandatory field
+    country = Column(String, nullable=True)  # Optional
+    state = Column(String, nullable=True)  # Optional
+    city = Column(String, nullable=True)  # Optional
+    pincode = Column(String, nullable=True)  # Optional
+    
     # NEW: Role system
     role = Column(String, default="user")  # "user" or "admin"
     is_active = Column(Boolean, default=True)
