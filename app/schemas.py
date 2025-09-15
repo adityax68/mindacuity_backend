@@ -91,11 +91,28 @@ class UserRoleUpdate(BaseModel):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str
     user: User
 
 class TokenData(BaseModel):
     email: Optional[str] = None
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class RefreshTokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+
+class TokenRevokeRequest(BaseModel):
+    refresh_token: str
+
+class TokenStatusResponse(BaseModel):
+    is_valid: bool
+    expires_at: Optional[datetime] = None
+    user_id: Optional[int] = None
 
 # New Test System Schemas
 class TestDefinitionResponse(BaseModel):

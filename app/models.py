@@ -52,6 +52,7 @@ class User(Base):
     rate_limits = relationship("RateLimit", back_populates="user")
     employee = relationship("Employee", back_populates="user", uselist=False)
     complaints = relationship("Complaint", back_populates="user")
+    refresh_tokens = relationship("RefreshToken", back_populates="user")
 
 class Role(Base):
     __tablename__ = "roles"
@@ -284,3 +285,17 @@ class Employee(Base):
     # Relationship
     user = relationship("User", back_populates="employee")
     complaints = relationship("Complaint", back_populates="employee")
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token_hash = Column(String(255), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    is_revoked = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationship
+    user = relationship("User", back_populates="refresh_tokens")

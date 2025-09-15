@@ -5,9 +5,12 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
+import secrets
+import hashlib
 from app.config import settings
 from app.database import get_db
-from app.models import User
+from app.models import User, RefreshToken
 from app.services.role_service import RoleService
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -29,6 +32,99 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     return encoded_jwt
+
+def create_refresh_token() -> str:
+    """Create a secure random refresh token"""
+    return secrets.token_urlsafe(32)
+
+def hash_refresh_token(token: str) -> str:
+    """Hash refresh token for secure storage"""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+def verify_refresh_token(token: str, db: Session) -> Optional[User]:
+    """Verify refresh token and return user if valid"""
+    try:
+        # Hash the provided token
+        token_hash = hash_refresh_token(token)
+        
+        # Find valid refresh token
+        refresh_token = db.query(RefreshToken).filter(
+            and_(
+                RefreshToken.token_hash == token_hash,
+                RefreshToken.is_revoked == False,
+                RefreshToken.expires_at > datetime.utcnow()
+            )
+        ).first()
+        
+        if not refresh_token:
+            return None
+            
+        # Get user
+        user = db.query(User).filter(User.id == refresh_token.user_id).first()
+        return user
+        
+    except Exception:
+        return None
+
+def store_refresh_token(user_id: int, token: str, db: Session) -> RefreshToken:
+    """Store refresh token in database"""
+    token_hash = hash_refresh_token(token)
+    expires_at = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
+    
+    refresh_token = RefreshToken(
+        user_id=user_id,
+        token_hash=token_hash,
+        expires_at=expires_at
+    )
+    
+    db.add(refresh_token)
+    db.commit()
+    db.refresh(refresh_token)
+    return refresh_token
+
+def revoke_refresh_token(token: str, db: Session) -> bool:
+    """Revoke a specific refresh token"""
+    try:
+        token_hash = hash_refresh_token(token)
+        refresh_token = db.query(RefreshToken).filter(
+            RefreshToken.token_hash == token_hash
+        ).first()
+        
+        if refresh_token:
+            refresh_token.is_revoked = True
+            db.commit()
+            return True
+        return False
+    except Exception:
+        return False
+
+def revoke_all_user_tokens(user_id: int, db: Session) -> int:
+    """Revoke all refresh tokens for a user"""
+    try:
+        count = db.query(RefreshToken).filter(
+            and_(
+                RefreshToken.user_id == user_id,
+                RefreshToken.is_revoked == False
+            )
+        ).update({"is_revoked": True})
+        db.commit()
+        return count
+    except Exception:
+        return 0
+
+def cleanup_expired_tokens(db: Session) -> int:
+    """Clean up expired and revoked tokens"""
+    try:
+        count = db.query(RefreshToken).filter(
+            and_(
+                RefreshToken.expires_at < datetime.utcnow(),
+                RefreshToken.is_revoked == True
+            )
+        ).delete()
+        db.commit()
+        return count
+    except Exception:
+        return 0
 
 def verify_token(token: str) -> Optional[str]:
     try:

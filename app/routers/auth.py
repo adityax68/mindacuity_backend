@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError, IntegrityError
 from datetime import timedelta
 from app.database import get_db
-from app.auth import verify_password, create_access_token, get_current_active_user, get_user_info
+from app.auth import verify_password, create_access_token, create_refresh_token, store_refresh_token, verify_refresh_token, revoke_refresh_token, revoke_all_user_tokens, get_current_active_user, get_user_info
 from app.crud import UserCRUD
-from app.schemas import UserCreate, User, Token
+from app.schemas import UserCreate, User, Token, RefreshTokenRequest, RefreshTokenResponse, TokenRevokeRequest, TokenStatusResponse
 from app.config import settings
 from app.services.role_service import RoleService
 import logging
@@ -119,6 +119,10 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
             data={"sub": user.email}, expires_delta=access_token_expires
         )
         
+        # Create refresh token
+        refresh_token = create_refresh_token()
+        store_refresh_token(user.id, refresh_token, db)
+        
         # Get user privileges
         role_service = RoleService(db)
         privileges = await role_service.get_user_privileges(user.id)
@@ -140,7 +144,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
             created_at=user.created_at
         )
         
-        return {"access_token": access_token, "token_type": "bearer", "user": user_response}
+        return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer", "user": user_response}
     
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
@@ -185,4 +189,120 @@ async def read_users_me(current_user: User = Depends(get_current_active_user), d
         city=current_user.city,
         pincode=current_user.pincode,
         created_at=current_user.created_at
-    ) 
+    )
+
+@router.post("/refresh", response_model=RefreshTokenResponse)
+async def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+    """
+    Refresh access token using refresh token.
+    
+    - **refresh_token**: Valid refresh token
+    """
+    try:
+        # Verify refresh token
+        user = verify_refresh_token(request.refresh_token, db)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Check if user is active
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Inactive user"
+            )
+        
+        # Revoke old refresh token
+        revoke_refresh_token(request.refresh_token, db)
+        
+        # Create new access token
+        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+        access_token = create_access_token(
+            data={"sub": user.email}, expires_delta=access_token_expires
+        )
+        
+        # Create new refresh token
+        new_refresh_token = create_refresh_token()
+        store_refresh_token(user.id, new_refresh_token, db)
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": new_refresh_token,
+            "token_type": "bearer"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during token refresh: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again."
+        )
+
+@router.post("/revoke", status_code=status.HTTP_200_OK)
+async def revoke_token(request: TokenRevokeRequest, db: Session = Depends(get_db)):
+    """
+    Revoke a specific refresh token.
+    
+    - **refresh_token**: Refresh token to revoke
+    """
+    try:
+        success = revoke_refresh_token(request.refresh_token, db)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Refresh token not found"
+            )
+        
+        return {"message": "Token revoked successfully"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during token revocation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again."
+        )
+
+@router.post("/revoke-all", status_code=status.HTTP_200_OK)
+async def revoke_all_tokens(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    """
+    Revoke all refresh tokens for the current user.
+    Requires authentication.
+    """
+    try:
+        count = revoke_all_user_tokens(current_user.id, db)
+        return {"message": f"Revoked {count} tokens successfully"}
+    
+    except Exception as e:
+        logger.error(f"Unexpected error during token revocation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again."
+        )
+
+@router.get("/token-status", response_model=TokenStatusResponse)
+async def check_token_status(current_user: User = Depends(get_current_active_user)):
+    """
+    Check if the current access token is valid.
+    Requires authentication.
+    """
+    try:
+        # If we get here, the token is valid
+        return {
+            "is_valid": True,
+            "expires_at": None,  # We don't expose exact expiry for security
+            "user_id": current_user.id
+        }
+    
+    except Exception as e:
+        logger.error(f"Unexpected error during token status check: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again."
+        ) 
