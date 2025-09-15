@@ -52,6 +52,11 @@ async def get_all_users(
             role=user.role,
             privileges=list(user_privileges),
             is_active=user.is_active,
+            age=user.age,
+            country=user.country,
+            state=user.state,
+            city=user.city,
+            pincode=user.pincode,
             created_at=user.created_at
         ))
     
