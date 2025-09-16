@@ -25,16 +25,25 @@ app = FastAPI(
 )
 
 # CORS configuration
-allowed_origins = [
-    "https://mindacuity.ai",
-    "https://www.mindacuity.ai",
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-    # Allow React Native development
-    "*"  # Allow all origins for development - restrict in production
-]
+# In development, be more permissive for React Native
+if os.getenv("ENVIRONMENT") == "production":
+    # Production: strict CORS
+    allowed_origins = [
+        "https://mindacuity.ai",
+        "https://www.mindacuity.ai",
+    ]
+else:
+    # Development: allow web and mobile development
+    allowed_origins = [
+        "https://mindacuity.ai",
+        "https://www.mindacuity.ai",
+        "http://localhost:3000",          # React web dev
+        "http://localhost:5173",          # Vite dev server
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        # React Native development
+        "*"  # Allow all origins in development only
+    ]
 
 # Debug CORS configuration
 print(f"CORS allowed origins: {allowed_origins}")
