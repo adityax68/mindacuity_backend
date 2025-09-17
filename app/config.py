@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Encryption Configuration
     encryption_key: str = os.getenv("ENCRYPTION_KEY", "")
     
+    # Environment Configuration
+    environment: str = os.getenv("ENVIRONMENT", "development")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
