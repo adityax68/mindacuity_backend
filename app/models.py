@@ -46,9 +46,6 @@ class User(Base):
     # NEW: Relationships
     privileges = relationship("Privilege", secondary=user_privileges, back_populates="users")
     assessments = relationship("ClinicalAssessment", back_populates="user")
-    chat_conversations = relationship("ChatConversation", back_populates="user")
-    chat_messages = relationship("ChatMessage", back_populates="user")
-    chat_attachments = relationship("ChatAttachment", back_populates="user")  # NEW: Chat attachments
     rate_limits = relationship("RateLimit", back_populates="user")
     employee = relationship("Employee", back_populates="user", uselist=False)
     complaints = relationship("Complaint", back_populates="user")
@@ -175,18 +172,6 @@ class ClinicalAssessment(Base):
     user = relationship("User", back_populates="assessments")
     test_definition = relationship("TestDefinition", back_populates="assessments")
 
-class ChatConversation(Base):
-    __tablename__ = "chat_conversations"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    title = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # Relationships
-    user = relationship("User", back_populates="chat_conversations")
-    messages = relationship("ChatMessage", back_populates="conversation", cascade="all, delete-orphan")
 
 class Complaint(Base):
     __tablename__ = "complaints"
@@ -206,42 +191,7 @@ class Complaint(Base):
     user = relationship("User", back_populates="complaints")
     employee = relationship("Employee", back_populates="complaints")
 
-class ChatMessage(Base):
-    __tablename__ = "chat_messages"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    conversation_id = Column(Integer, ForeignKey("chat_conversations.id"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    role = Column(String, nullable=False)  # "user" or "assistant"
-    content = Column(Text, nullable=False)  # Encrypted message content
-    encrypted_content = Column(Text, nullable=False)  # Actually encrypted content
-    attachment_id = Column(Integer, ForeignKey("chat_attachments.id"), nullable=True)  # NEW: Link to attachment
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Relationships
-    conversation = relationship("ChatConversation", back_populates="messages")
-    user = relationship("User", back_populates="chat_messages")
-    attachment = relationship("ChatAttachment", back_populates="messages")
 
-class ChatAttachment(Base):
-    __tablename__ = "chat_attachments"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    filename = Column(String, nullable=False)
-    original_filename = Column(String, nullable=False)
-    file_size = Column(Integer, nullable=False)
-    file_type = Column(String, nullable=False)  # MIME type
-    file_path = Column(String, nullable=False)  # Path to temporary file
-    upload_url = Column(String, nullable=True)  # URL for file access
-    is_processed = Column(Boolean, default=False)  # Whether GPT-5 has processed it
-    processed_content = Column(Text, nullable=True)  # Extracted/analyzed content from GPT-5
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    expires_at = Column(DateTime(timezone=True), nullable=True)  # Auto-cleanup timestamp
-    
-    # Relationships
-    user = relationship("User", back_populates="chat_attachments")
-    messages = relationship("ChatMessage", back_populates="attachment")
 
 class RateLimit(Base):
     __tablename__ = "rate_limits"
@@ -299,3 +249,63 @@ class RefreshToken(Base):
     
     # Relationship
     user = relationship("User", back_populates="refresh_tokens")
+
+# NEW: Session-based chat models for anonymous conversations
+
+class Conversation(Base):
+    __tablename__ = "conversations_new"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), unique=True, nullable=False, index=True)
+    title = Column(String(255), default="New Conversation")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, default=True)
+    
+    # Relationships
+    messages = relationship("Message", back_populates="conversation")
+    usage_records = relationship("ConversationUsage", back_populates="conversation")
+
+class Message(Base):
+    __tablename__ = "messages_new"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), ForeignKey("conversations_new.session_identifier"), nullable=False)
+    role = Column(String(20), nullable=False)  # "user" or "assistant"
+    content = Column(Text, nullable=False)
+    encrypted_content = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", back_populates="messages")
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    subscription_token = Column(String(255), unique=True, nullable=False, index=True)
+    access_code = Column(String(20), unique=True, nullable=False, index=True)
+    plan_type = Column(String(20), nullable=False)  # "free", "basic", "premium"
+    message_limit = Column(Integer, nullable=True)  # NULL for unlimited
+    price = Column(Numeric(10, 2), default=0.00)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, default=True)
+    
+    # Relationships
+    usage_records = relationship("ConversationUsage", back_populates="subscription")
+
+class ConversationUsage(Base):
+    __tablename__ = "conversation_usage"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), ForeignKey("conversations_new.session_identifier"), nullable=False)
+    subscription_token = Column(String(255), ForeignKey("subscriptions.subscription_token"), nullable=False)
+    messages_used = Column(Integer, default=0)
+    last_used_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", back_populates="usage_records")
+    subscription = relationship("Subscription", back_populates="usage_records")

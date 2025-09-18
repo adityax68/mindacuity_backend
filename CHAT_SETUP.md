@@ -32,7 +32,7 @@ The chat system will automatically create the required tables when you start the
 
 ## Features
 
-- **Rate Limiting**: 50 messages per minute per user
+- **Rate Limiting**: 20 messages per minute per user
 - **Message Encryption**: All messages are encrypted using AES-256
 - **Conversation Management**: Users can have multiple conversations
 - **Context Awareness**: AI remembers conversation context
@@ -55,6 +55,6 @@ The chat system will automatically create the required tables when you start the
 
 ## Rate Limits
 
-- **Messages per minute**: 50
+- **Messages per minute**: 20
 - **Rate limit window**: 1 minute
 - **Storage**: PostgreSQL with encryption 

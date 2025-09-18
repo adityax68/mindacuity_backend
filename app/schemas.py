@@ -245,26 +245,44 @@ class QuestionsResponse(BaseModel):
     questions: List[str]
     response_options: List[str]
 
-# Chat schemas
-class ChatMessageRequest(BaseModel):
+
+# NEW: Session-based chat schemas
+
+class SessionChatMessageRequest(BaseModel):
     message: str
-    conversation_id: Optional[int] = None
-    attachment_ids: Optional[List[int]] = None  # NEW: Support for multiple attachments
+    session_identifier: str
 
-class FileUploadResponse(BaseModel):
-    file_id: int
-    filename: str
-    file_size: int
-    file_type: str
-    upload_url: str
-    created_at: datetime
-    
-    class Config:
-        from_attributes = True
+class SessionChatResponse(BaseModel):
+    message: str
+    conversation_id: str  # session_identifier
+    requires_subscription: bool = False
+    messages_used: int = 0
+    message_limit: Optional[int] = None
+    plan_type: str = "free"
 
-class ChatMessageResponse(BaseModel):
+class SubscriptionRequest(BaseModel):
+    plan_type: str = Field(..., description="free, basic, or premium")
+
+class SubscriptionResponse(BaseModel):
+    subscription_token: str
+    access_code: str
+    plan_type: str
+    message_limit: Optional[int]
+    price: float
+    expires_at: Optional[datetime] = None
+
+class AccessCodeRequest(BaseModel):
+    access_code: str
+
+class AccessCodeResponse(BaseModel):
+    success: bool
+    message: str
+    subscription_token: Optional[str] = None
+    plan_type: Optional[str] = None
+    message_limit: Optional[int] = None
+
+class SessionMessageResponse(BaseModel):
     id: int
-    conversation_id: int
     role: str
     content: str
     created_at: datetime
@@ -272,20 +290,15 @@ class ChatMessageResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class ChatConversationResponse(BaseModel):
-    id: int
-    title: Optional[str]
+class SessionConversationResponse(BaseModel):
+    session_identifier: str
+    title: str
     created_at: datetime
-    updated_at: datetime
-    messages: List[ChatMessageResponse]
+    messages: List[SessionMessageResponse]
+    usage_info: Dict[str, Any]
     
     class Config:
         from_attributes = True
-
-class ChatResponse(BaseModel):
-    conversation_id: int  # This will be the conversation.id
-    assistant_message: str
-    message_id: int
 
 # Organisation schemas
 class OrganisationCreate(BaseModel):
