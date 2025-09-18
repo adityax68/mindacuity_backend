@@ -7,7 +7,7 @@ import logging
 from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
 from app.models import Conversation, Message, Subscription, ConversationUsage
-from app.schemas import ChatMessageRequest, ChatResponse, SessionChatResponse
+from app.schemas import SessionChatMessageRequest, SessionChatResponse
 from app.config import settings
 from app.services.subscription_service import SubscriptionService
 
@@ -183,7 +183,7 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
                 logger.error(f"Failed to rollback transaction: {rollback_error}")
             return []
 
-    async def process_chat_message(self, db: Session, session_identifier: str, chat_request: ChatMessageRequest) -> SessionChatResponse:
+    async def process_chat_message(self, db: Session, session_identifier: str, chat_request: SessionChatMessageRequest) -> SessionChatResponse:
         """Process a chat message and return AI response"""
         try:
             # Check usage limit (allow orphaned reuse for message sending)
