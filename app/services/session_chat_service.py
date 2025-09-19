@@ -186,8 +186,8 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
     async def process_chat_message(self, db: Session, session_identifier: str, chat_request: SessionChatMessageRequest) -> SessionChatResponse:
         """Process a chat message and return AI response"""
         try:
-            # Check usage limit (allow orphaned reuse for message sending)
-            usage_info = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=True)
+            # Check usage limit (don't allow orphaned reuse for new sessions - always create fresh free plan)
+            usage_info = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=False)
             
             if not usage_info["can_send"]:
                 if usage_info.get("plan_type") == "free" and usage_info["messages_used"] >= usage_info["message_limit"]:
@@ -260,7 +260,7 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
             self.subscription_service.increment_usage(db, session_identifier)
             
             # Get updated usage info
-            updated_usage = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=True)
+            updated_usage = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=False)
             
             return SessionChatResponse(
                 message=ai_message_content,
@@ -281,7 +281,7 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
                 logger.error(f"Failed to rollback transaction: {rollback_error}")
             
             # Get current usage info without incrementing (since we failed)
-            current_usage = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=True)
+            current_usage = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=False)
             
             return SessionChatResponse(
                 message="I'm sorry, I encountered an error. Please try again.",
@@ -319,22 +319,3 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
                 logger.error(f"Failed to rollback transaction: {rollback_error}")
             return []
 
-    def delete_conversation(self, db: Session, session_identifier: str) -> bool:
-        """Delete a conversation and all its messages, but preserve usage records"""
-        try:
-            # Delete messages only
-            db.query(Message).filter(Message.session_identifier == session_identifier).delete()
-            
-            # Delete conversation record
-            db.query(Conversation).filter(Conversation.session_identifier == session_identifier).delete()
-            
-            # DO NOT delete usage records - preserve subscription and message count
-            
-            db.commit()
-            logger.info(f"Deleted conversation messages for: {session_identifier}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to delete conversation {session_identifier}: {e}")
-            db.rollback()
-            return False

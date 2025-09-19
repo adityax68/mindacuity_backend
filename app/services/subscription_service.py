@@ -14,7 +14,7 @@ class SubscriptionService:
     def __init__(self):
         self.free_plan_limit = 5
         self.basic_plan_limit = 10
-        self.premium_plan_limit = None  # Unlimited
+        self.premium_plan_limit = 20  # 20 messages
     
     def generate_session_identifier(self) -> str:
         """Generate a unique session identifier"""
@@ -115,7 +115,7 @@ class SubscriptionService:
                 subscription_token=subscription_token,
                 access_code=access_code,
                 plan_type="premium",
-                message_limit=None,  # Unlimited
+                message_limit=self.premium_plan_limit,  # 20 messages
                 price=15.00,
                 expires_at=datetime.now(timezone.utc) + timedelta(days=30)
             )
@@ -130,7 +130,7 @@ class SubscriptionService:
                 "subscription_token": subscription_token,
                 "access_code": access_code,
                 "plan_type": "premium",
-                "message_limit": None,
+                "message_limit": self.premium_plan_limit,
                 "price": 15.00
             }
             
@@ -188,8 +188,16 @@ class SubscriptionService:
             db.rollback()
             raise
     
-    def link_session_to_subscription(self, db: Session, session_identifier: str, subscription_token: str) -> bool:
-        """Link a session to a subscription"""
+    def link_session_to_subscription(self, db: Session, session_identifier: str, subscription_token: str, allow_reuse: bool = False) -> bool:
+        """Link a session to a subscription
+        
+        Args:
+            db: Database session
+            session_identifier: Session identifier
+            subscription_token: Subscription token
+            allow_reuse: If True, allows reusing existing usage records (for access code scenarios)
+                        If False, always creates fresh usage record (for new subscriptions)
+        """
         try:
             # First, ensure conversation exists
             conversation = self.create_or_get_conversation(db, session_identifier)
@@ -197,34 +205,36 @@ class SubscriptionService:
             # Unlink current session from any existing subscription first
             self.unlink_session_from_subscription(db, session_identifier)
             
-            # Check if there's already ANY usage record for this subscription (active or orphaned)
-            existing_subscription_usage = db.query(ConversationUsage).filter(
-                ConversationUsage.subscription_token == subscription_token
-            ).first()
-            
-            if existing_subscription_usage:
-                # If there's an existing usage record, unlink it from its current session and link to new session
-                if existing_subscription_usage.session_identifier:
-                    # Unlink the existing session
-                    existing_subscription_usage.session_identifier = None
+            if allow_reuse:
+                # Check if there's already ANY usage record for this subscription (active or orphaned)
+                existing_subscription_usage = db.query(ConversationUsage).filter(
+                    ConversationUsage.subscription_token == subscription_token
+                ).first()
+                
+                if existing_subscription_usage:
+                    # If there's an existing usage record, unlink it from its current session and link to new session
+                    if existing_subscription_usage.session_identifier:
+                        # Unlink the existing session
+                        existing_subscription_usage.session_identifier = None
+                        db.commit()
+                        logger.info(f"Unlinked existing session {existing_subscription_usage.session_identifier} from subscription {subscription_token}")
+                    
+                    # Link the existing usage record to this session (preserves message count)
+                    existing_subscription_usage.session_identifier = session_identifier
                     db.commit()
-                    logger.info(f"Unlinked existing session {existing_subscription_usage.session_identifier} from subscription {subscription_token}")
-                
-                # Link the existing usage record to this session (preserves message count)
-                existing_subscription_usage.session_identifier = session_identifier
-                db.commit()
-                logger.info(f"Linked existing subscription usage to session {session_identifier} with {existing_subscription_usage.messages_used} messages used")
-            else:
-                # Create new usage record starting from 0 (new subscription)
-                usage = ConversationUsage(
-                    session_identifier=session_identifier,
-                    subscription_token=subscription_token,
-                    messages_used=0
-                )
-                
-                db.add(usage)
-                db.commit()
-                logger.info(f"Created new usage record for session {session_identifier} and subscription {subscription_token}")
+                    logger.info(f"Linked existing subscription usage to session {session_identifier} with {existing_subscription_usage.messages_used} messages used")
+                    return True
+            
+            # Create new usage record starting from 0 (new subscription or when reuse not allowed)
+            usage = ConversationUsage(
+                session_identifier=session_identifier,
+                subscription_token=subscription_token,
+                messages_used=0
+            )
+            
+            db.add(usage)
+            db.commit()
+            logger.info(f"Created new usage record for session {session_identifier} and subscription {subscription_token}")
             
             return True
             
@@ -274,6 +284,8 @@ class SubscriptionService:
             logger.info(f"Checking usage for session {session_identifier}: found usage = {usage is not None}")
             if usage:
                 logger.info(f"Usage record: subscription_token={usage.subscription_token}, messages_used={usage.messages_used}")
+            else:
+                logger.info(f"No usage record found for session {session_identifier}")
             
             if not usage:
                 # Only check for orphaned usage if explicitly allowed (access code scenarios)
@@ -298,8 +310,8 @@ class SubscriptionService:
                     logger.info(f"No usage found for session {session_identifier}, creating fresh free subscription")
                     free_subscription = self.create_free_subscription(db)
                     
-                    # Link session to free subscription
-                    self.link_session_to_subscription(db, session_identifier, free_subscription["subscription_token"])
+                    # Link session to free subscription (don't allow reuse for new subscriptions)
+                    self.link_session_to_subscription(db, session_identifier, free_subscription["subscription_token"], allow_reuse=False)
                     
                     # Return free subscription info
                     return {

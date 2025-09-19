@@ -129,7 +129,7 @@ async def link_session_to_subscription(
     """Link a session to a subscription"""
     try:
         success = subscription_service.link_session_to_subscription(
-            db, session_identifier, subscription_token
+            db, session_identifier, subscription_token, allow_reuse=True
         )
         
         if success:
@@ -158,8 +158,8 @@ async def get_conversation(
         # Get messages
         messages = chat_service.get_conversation_messages(db, session_identifier)
         
-        # Get usage info (allow orphaned reuse for conversation loading)
-        usage_info = subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=True)
+        # Get usage info (preserve existing plans for existing sessions)
+        usage_info = subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=False)
         
         # Get conversation details
         from app.models import Conversation
@@ -167,11 +167,9 @@ async def get_conversation(
             Conversation.session_identifier == session_identifier
         ).first()
         
+        # If no conversation exists, create one (this preserves the session and its plan)
         if not conversation:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Conversation not found"
-            )
+            conversation = subscription_service.create_or_get_conversation(db, session_identifier)
         
         return SessionConversationResponse(
             session_identifier=conversation.session_identifier,
@@ -189,29 +187,6 @@ async def get_conversation(
             detail=f"Failed to get conversation: {str(e)}"
         )
 
-@router.delete("/conversation/{session_identifier}")
-async def delete_conversation(
-    session_identifier: str,
-    db: Session = Depends(get_db),
-    chat_service: SessionChatService = Depends(get_session_chat_service)
-):
-    """Delete a conversation and all its messages"""
-    try:
-        success = chat_service.delete_conversation(db, session_identifier)
-        
-        if success:
-            return {"message": "Conversation deleted successfully"}
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to delete conversation"
-            )
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete conversation: {str(e)}"
-        )
 
 @router.get("/usage/{session_identifier}")
 async def get_usage_info(
