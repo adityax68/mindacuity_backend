@@ -357,3 +357,36 @@ class Complaint(BaseModel):
 
     class Config:
         from_attributes = True
+
+# Research schemas
+class ResearchCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1)
+    source_url: str = Field(..., min_length=1, max_length=500)
+    thumbnail_url: str = Field(..., min_length=1, max_length=500)
+
+class ResearchUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = Field(None, min_length=1)
+    source_url: Optional[str] = Field(None, min_length=1, max_length=500)
+    is_active: Optional[bool] = None
+
+class Research(BaseModel):
+    id: int
+    title: str
+    description: str
+    thumbnail_url: str
+    source_url: str
+    is_active: bool
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class ResearchListResponse(BaseModel):
+    researches: List[Research]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int

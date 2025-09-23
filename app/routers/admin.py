@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_user, require_role
 from app.models import User, Role, Privilege, Employee as EmployeeModel, Organisation
-from app.schemas import UserResponse, RoleResponse, PrivilegeResponse, UserRoleUpdate, OrganisationCreate, OrganisationResponse, Employee
+from app.schemas import UserResponse, RoleResponse, PrivilegeResponse, UserRoleUpdate, OrganisationCreate, OrganisationResponse, Employee, ResearchCreate, ResearchUpdate, Research, ResearchListResponse
 from app.services.role_service import RoleService
 # Removed cache services - using database indexes instead
-from app.crud import OrganisationCRUD
+from app.crud import OrganisationCRUD, ResearchCRUD
 from typing import List
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -571,3 +571,135 @@ async def search_organisations(
         created_at=org.created_at,
         updated_at=org.updated_at
     ) for org in organisations]
+
+# Research Management Endpoints
+@router.post("/researches", response_model=Research)
+async def create_research(
+    research_data: ResearchCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Create a new research entry (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "manage_researches")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    try:
+        # Create research entry with pre-uploaded thumbnail URL
+        research = ResearchCRUD.create_research(
+            db=db,
+            title=research_data.title,
+            description=research_data.description,
+            thumbnail_url=research_data.thumbnail_url,
+            source_url=research_data.source_url
+        )
+        
+        return research
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create research: {str(e)}")
+
+@router.post("/researches/upload")
+async def upload_research_thumbnail(
+    thumbnail_file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Upload research thumbnail to S3 (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "manage_researches")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    try:
+        # Upload thumbnail to S3
+        from app.services.s3_service import s3_service
+        thumbnail_url = await s3_service.upload_research_thumbnail(thumbnail_file)
+        
+        return {"thumbnail_url": thumbnail_url}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload thumbnail: {str(e)}")
+
+@router.get("/researches", response_model=ResearchListResponse)
+async def get_researches(
+    page: int = 1,
+    per_page: int = 10,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Get all researches with pagination (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "read_researches")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    skip = (page - 1) * per_page
+    researches = ResearchCRUD.get_researches(db, skip=skip, limit=per_page, active_only=False)
+    total = ResearchCRUD.get_researches_count(db, active_only=False)
+    total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+    
+    return ResearchListResponse(
+        researches=researches,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages
+    )
+
+@router.put("/researches/{research_id}", response_model=Research)
+async def update_research(
+    research_id: int,
+    research_data: ResearchUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Update a research entry (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "manage_researches")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    # Get existing research
+    research = ResearchCRUD.get_research_by_id(db, research_id)
+    if not research:
+        raise HTTPException(status_code=404, detail="Research not found")
+    
+    # Update research
+    update_data = research_data.dict(exclude_unset=True)
+    updated_research = ResearchCRUD.update_research(db, research_id, **update_data)
+    
+    return updated_research
+
+@router.delete("/researches/{research_id}")
+async def delete_research(
+    research_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    role_service: RoleService = Depends(get_role_service)
+):
+    """Delete a research entry (Admin only)"""
+    has_privilege = await role_service.user_has_privilege(current_user.id, "manage_researches")
+    if not has_privilege:
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
+    
+    # Get existing research
+    research = ResearchCRUD.get_research_by_id(db, research_id)
+    if not research:
+        raise HTTPException(status_code=404, detail="Research not found")
+    
+    # Delete research (soft delete)
+    success = ResearchCRUD.delete_research(db, research_id)
+    
+    if success:
+        # Also delete the thumbnail from S3
+        try:
+            from app.services.s3_service import s3_service
+            await s3_service.delete_research_thumbnail(research.thumbnail_url)
+        except Exception as e:
+            # Log error but don't fail the request
+            print(f"Failed to delete thumbnail from S3: {e}")
+        
+        return {"message": "Research deleted successfully"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to delete research")

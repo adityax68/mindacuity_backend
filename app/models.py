@@ -309,3 +309,15 @@ class ConversationUsage(Base):
     # Relationships
     conversation = relationship("Conversation", back_populates="usage_records")
     subscription = relationship("Subscription", back_populates="usage_records")
+
+class Research(Base):
+    __tablename__ = "researches"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    thumbnail_url = Column(String(500), nullable=False)  # S3 URL for thumbnail
+    source_url = Column(String(500), nullable=False)  # External source URL
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

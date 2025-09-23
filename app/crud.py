@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, or_
 from typing import List, Optional, Dict, Any
-from app.models import User, ClinicalAssessment, Organisation, Employee, Complaint, TestDefinition, TestQuestion, TestQuestionOption, TestScoringRange
+from app.models import User, ClinicalAssessment, Organisation, Employee, Complaint, TestDefinition, TestQuestion, TestQuestionOption, TestScoringRange, Research
 from app.schemas import UserCreate
 from app.auth import get_password_hash
 from app.clinical_assessments import AssessmentType
@@ -542,3 +542,67 @@ class TestCRUD:
             ClinicalAssessment.id == assessment_id,
             ClinicalAssessment.test_definition_id.isnot(None)
         ).first()
+
+class ResearchCRUD:
+    """CRUD operations for Research model."""
+    
+    @staticmethod
+    def create_research(db: Session, title: str, description: str, thumbnail_url: str, source_url: str) -> Research:
+        """Create a new research entry."""
+        db_research = Research(
+            title=title,
+            description=description,
+            thumbnail_url=thumbnail_url,
+            source_url=source_url
+        )
+        db.add(db_research)
+        db.commit()
+        db.refresh(db_research)
+        return db_research
+    
+    @staticmethod
+    def get_research_by_id(db: Session, research_id: int) -> Optional[Research]:
+        """Get research by ID."""
+        return db.query(Research).filter(Research.id == research_id).first()
+    
+    @staticmethod
+    def get_researches(db: Session, skip: int = 0, limit: int = 10, active_only: bool = True) -> List[Research]:
+        """Get list of researches with pagination."""
+        query = db.query(Research)
+        if active_only:
+            query = query.filter(Research.is_active == True)
+        return query.order_by(desc(Research.created_at)).offset(skip).limit(limit).all()
+    
+    @staticmethod
+    def get_researches_count(db: Session, active_only: bool = True) -> int:
+        """Get total count of researches."""
+        query = db.query(Research)
+        if active_only:
+            query = query.filter(Research.is_active == True)
+        return query.count()
+    
+    @staticmethod
+    def update_research(db: Session, research_id: int, **kwargs) -> Optional[Research]:
+        """Update research by ID."""
+        db_research = db.query(Research).filter(Research.id == research_id).first()
+        if not db_research:
+            return None
+        
+        for key, value in kwargs.items():
+            if hasattr(db_research, key):
+                setattr(db_research, key, value)
+        
+        db.commit()
+        db.refresh(db_research)
+        return db_research
+    
+    @staticmethod
+    def delete_research(db: Session, research_id: int) -> bool:
+        """Delete research by ID (soft delete by setting is_active to False)."""
+        db_research = db.query(Research).filter(Research.id == research_id).first()
+        if not db_research:
+            return False
+        
+        db_research.is_active = False
+        db.commit()
+        return True

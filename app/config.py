@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     # Environment Configuration
     environment: str = os.getenv("ENVIRONMENT", "development")
     
+    # AWS S3 Configuration
+    aws_access_key_id: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    aws_region: str = os.getenv("AWS_REGION", "us-east-1")
+    s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
+    s3_base_url: str = os.getenv("S3_BASE_URL", "")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
