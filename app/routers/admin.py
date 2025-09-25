@@ -635,8 +635,8 @@ async def get_researches(
         raise HTTPException(status_code=403, detail="Insufficient privileges")
     
     skip = (page - 1) * per_page
-    researches = ResearchCRUD.get_researches(db, skip=skip, limit=per_page, active_only=False)
-    total = ResearchCRUD.get_researches_count(db, active_only=False)
+    researches = ResearchCRUD.get_researches(db, skip=skip, limit=per_page, active_only=True)
+    total = ResearchCRUD.get_researches_count(db, active_only=True)
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
     
     return ResearchListResponse(

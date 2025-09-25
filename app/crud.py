@@ -240,19 +240,174 @@ class EmployeeCRUD:
     
     @staticmethod
     def get_employee_by_id(db: Session, employee_id: int) -> Optional[Employee]:
-        """Get employee by ID."""
+        """Get employee by employee ID."""
         return db.query(Employee).filter(Employee.id == employee_id).first()
     
     @staticmethod
     def update_employee_status(db: Session, employee_id: int, is_active: bool) -> Optional[Employee]:
-        """Update employee status (active/inactive)."""
+        """Update employee status."""
         employee = db.query(Employee).filter(Employee.id == employee_id).first()
         if employee:
             employee.is_active = is_active
             db.commit()
             db.refresh(employee)
-            return employee
-        return None
+        return employee
+    
+    @staticmethod
+    def bulk_create_employees(db: Session, employees_data: List[Dict], org_id: str, hr_email: str) -> Dict[str, Any]:
+        """Bulk create employees with validation."""
+        from app.schemas import BulkEmployeeResult
+        from app.models import User
+        from app.auth import get_password_hash
+        from sqlalchemy import func
+        import re
+        
+        results = []
+        successful = 0
+        failed = 0
+        
+        # Validate and process each employee
+        for i, emp_data in enumerate(employees_data):
+            try:
+                # Validate required fields
+                if not emp_data.get('email') or not emp_data.get('employee_code') or not emp_data.get('full_name'):
+                    missing_fields = []
+                    if not emp_data.get('email'):
+                        missing_fields.append('email')
+                    if not emp_data.get('employee_code'):
+                        missing_fields.append('employee_code')
+                    if not emp_data.get('full_name'):
+                        missing_fields.append('full_name')
+                    
+                    results.append(BulkEmployeeResult(
+                        email=emp_data.get('email', ''),
+                        employee_code=emp_data.get('employee_code', ''),
+                        status="failed",
+                        message=f"Row {i+1}: Missing required fields: {', '.join(missing_fields)}"
+                    ))
+                    failed += 1
+                    continue
+                
+                email = emp_data['email'].strip().lower()
+                employee_code = emp_data['employee_code'].strip()
+                full_name = emp_data.get('full_name', '').strip()
+                
+                # Validate email format
+                if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+                    results.append(BulkEmployeeResult(
+                        email=email,
+                        employee_code=employee_code,
+                        status="failed",
+                        message=f"Row {i+1}: Invalid email format"
+                    ))
+                    failed += 1
+                    continue
+                
+                # Check if user already exists
+                existing_user = db.query(User).filter(User.email == email).first()
+                if existing_user:
+                    results.append(BulkEmployeeResult(
+                        email=email,
+                        employee_code=employee_code,
+                        status="failed",
+                        message=f"Row {i+1}: User with this email already exists"
+                    ))
+                    failed += 1
+                    continue
+                
+                # Check if employee code already exists
+                existing_employee = db.query(Employee).filter(Employee.employee_code == employee_code).first()
+                if existing_employee:
+                    results.append(BulkEmployeeResult(
+                        email=email,
+                        employee_code=employee_code,
+                        status="failed",
+                        message=f"Row {i+1}: Employee code already exists"
+                    ))
+                    failed += 1
+                    continue
+                
+                # Generate username from email
+                username = email.split('@')[0]
+                # Ensure username is unique
+                counter = 1
+                original_username = username
+                while db.query(User).filter(User.username == username).first():
+                    username = f"{original_username}{counter}"
+                    counter += 1
+                
+                # Create user
+                hashed_password = get_password_hash(org_id)  # Use org_id as password
+                new_user = User(
+                    email=email,
+                    username=username,
+                    full_name=full_name,
+                    hashed_password=hashed_password,
+                    role="employee",
+                    age=emp_data.get('age', 25),
+                    country=emp_data.get('country'),
+                    state=emp_data.get('state'),
+                    city=emp_data.get('city'),
+                    pincode=emp_data.get('pincode'),
+                    is_active=True
+                )
+                db.add(new_user)
+                db.flush()  # Get the user ID
+                
+                # Create employee record
+                new_employee = Employee(
+                    user_id=new_user.id,
+                    employee_code=employee_code,
+                    org_id=org_id,
+                    hr_email=hr_email,
+                    full_name=full_name,
+                    email=email,
+                    department=emp_data.get('department'),
+                    position=emp_data.get('position'),
+                    hire_date=emp_data.get('hire_date'),
+                    is_active=True
+                )
+                db.add(new_employee)
+                db.flush()  # Get the employee ID
+                
+                results.append(BulkEmployeeResult(
+                    email=email,
+                    employee_code=employee_code,
+                    status="success",
+                    message=f"Row {i+1}: Employee created successfully",
+                    user_id=new_user.id,
+                    employee_id=new_employee.id
+                ))
+                successful += 1
+                
+            except Exception as e:
+                results.append(BulkEmployeeResult(
+                    email=emp_data.get('email', ''),
+                    employee_code=emp_data.get('employee_code', ''),
+                    status="failed",
+                    message=f"Row {i+1}: Error - {str(e)}"
+                ))
+                failed += 1
+        
+        # Commit all changes
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            # Mark all as failed if commit fails
+            for result in results:
+                if result.status == "success":
+                    result.status = "failed"
+                    result.message = f"Database error: {str(e)}"
+            successful = 0
+            failed = len(results)
+        
+        return {
+            "results": results,
+            "successful": successful,
+            "failed": failed,
+            "total_processed": len(employees_data)
+        }
 
 class ComplaintCRUD:
     """CRUD operations for Complaint model."""

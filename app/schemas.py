@@ -369,6 +369,7 @@ class ResearchUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, min_length=1)
     source_url: Optional[str] = Field(None, min_length=1, max_length=500)
+    thumbnail_url: Optional[str] = Field(None, min_length=1, max_length=500)
     is_active: Optional[bool] = None
 
 class Research(BaseModel):
@@ -390,3 +391,32 @@ class ResearchListResponse(BaseModel):
     page: int
     per_page: int
     total_pages: int
+
+# Bulk Employee Access schemas
+class BulkEmployeeData(BaseModel):
+    email: str  # REQUIRED
+    employee_code: str  # REQUIRED
+    full_name: str  # REQUIRED
+    age: int = Field(default=25, ge=1, le=120, description="Age must be between 1 and 120")  # REQUIRED with default
+    department: Optional[str] = None
+    position: Optional[str] = None
+    hire_date: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    pincode: Optional[str] = None
+
+class BulkEmployeeResult(BaseModel):
+    email: str
+    employee_code: str
+    status: str  # "success" or "failed"
+    message: str
+    user_id: Optional[int] = None
+    employee_id: Optional[int] = None
+
+class BulkEmployeeResponse(BaseModel):
+    total_processed: int
+    successful: int
+    failed: int
+    results: List[BulkEmployeeResult]
+    summary: str
