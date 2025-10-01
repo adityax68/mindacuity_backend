@@ -136,6 +136,40 @@ def initialize_privilege_system():
         # Initialize default roles and privileges
         asyncio.run(role_service.initialize_default_roles_and_privileges())
         
+        # Add additional privileges that might be missing
+        print("➕ Adding additional privileges...")
+        additional_privileges = [
+            # Research privileges
+            {"name": "read_researches", "description": "Read research articles", "category": "research"},
+            {"name": "manage_researches", "description": "Manage research articles (create, update, delete)", "category": "research"},
+            
+            # Admin access privilege
+            {"name": "admin_access", "description": "Access to admin panel", "category": "system"},
+        ]
+        
+        for priv_data in additional_privileges:
+            existing_priv = db.query(Privilege).filter(Privilege.name == priv_data["name"]).first()
+            if not existing_priv:
+                privilege = Privilege(**priv_data)
+                db.add(privilege)
+                print(f"  ✅ Created privilege: {priv_data['name']}")
+            else:
+                print(f"  ℹ️  Privilege already exists: {priv_data['name']}")
+        
+        db.commit()
+        
+        # Ensure admin role has ALL privileges including research privileges
+        print("👑 Ensuring admin role has all privileges...")
+        all_privileges = db.query(Privilege).filter(Privilege.is_active == True).all()
+        admin_role = db.query(Role).filter(Role.name == "admin").first()
+        
+        if admin_role:
+            admin_role.privileges.clear()
+            for privilege in all_privileges:
+                admin_role.privileges.append(privilege)
+            db.commit()
+            print(f"  ✅ Admin role now has {len(all_privileges)} privileges")
+        
         # Update existing users to have 'user' role if not set
         print("👥 Updating existing users...")
         users_without_role = db.query(User).filter(
