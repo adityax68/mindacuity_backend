@@ -10,7 +10,7 @@ class UserBase(BaseModel):
     full_name: Optional[str] = None
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(..., min_length=1, max_length=72, description="Password must be between 1 and 72 characters")
     role: Optional[str] = "user"  # NEW: Add role field
     # NEW: User profile fields
     age: int = Field(..., ge=1, le=120, description="Age must be between 1 and 120")

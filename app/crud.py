@@ -337,7 +337,7 @@ class EmployeeCRUD:
                     counter += 1
                 
                 # Create user
-                hashed_password = get_password_hash(org_id)  # Use org_id as password
+                hashed_password = get_password_hash(org_id)  # Use org_id as password (will be truncated if needed)
                 new_user = User(
                     email=email,
                     username=username,
