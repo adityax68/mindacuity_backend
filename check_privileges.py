@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script to check current privilege and role status in the database.
-Use this to verify the current state before and after running restore_admin_privileges.py
+Use this to verify the current state before and after running privilege management scripts
 """
 
 import asyncio

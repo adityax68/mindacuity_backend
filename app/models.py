@@ -50,6 +50,7 @@ class User(Base):
     employee = relationship("Employee", back_populates="user", uselist=False)
     complaints = relationship("Complaint", back_populates="user")
     refresh_tokens = relationship("RefreshToken", back_populates="user")
+    chat_attachments = relationship("ChatAttachment", back_populates="user")
 
 class Role(Base):
     __tablename__ = "roles"
@@ -309,6 +310,25 @@ class ConversationUsage(Base):
     # Relationships
     conversation = relationship("Conversation", back_populates="usage_records")
     subscription = relationship("Subscription", back_populates="usage_records")
+
+class ChatAttachment(Base):
+    __tablename__ = "chat_attachments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    filename = Column(String(255), nullable=False)
+    original_filename = Column(String(255), nullable=False)
+    file_size = Column(Integer, nullable=False)
+    file_type = Column(String(100), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    upload_url = Column(String(500), nullable=True)
+    is_processed = Column(Boolean, default=False)
+    processed_content = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    user = relationship("User", back_populates="chat_attachments")
 
 class Research(Base):
     __tablename__ = "researches"
