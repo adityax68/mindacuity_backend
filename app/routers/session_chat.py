@@ -126,7 +126,6 @@ async def link_session_to_subscription(
     db: Session = Depends(get_db),
     subscription_service: SubscriptionService = Depends(get_subscription_service)
 ):
-    """Link a session to a subscription"""
     try:
         success = subscription_service.link_session_to_subscription(
             db, session_identifier, subscription_token, allow_reuse=True
