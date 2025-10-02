@@ -113,24 +113,21 @@ async def resolve_complaint(
         
         # Verify HR has access to this complaint
         # HR can manage complaints from their organization (both identified and anonymous)
-        if complaint.employee_id is not None:
-            # For identified complaints, check access using the stored org_id and hr_email
-            hr_employee = EmployeeCRUD.get_employee_by_user_id(db, current_user.id)
-            has_access = False
-            
-            if hr_employee and hr_employee.org_id and complaint.org_id:
-                # Check if both HR and complaint are in the same organization
-                has_access = (hr_employee.org_id == complaint.org_id)
-            elif complaint.hr_email:
-                # Fallback to HR email-based access
-                has_access = (complaint.hr_email == current_user.email)
-            
-            if not has_access:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied. You can only manage complaints from your organization or managed employees."
-                )
-        # For anonymous complaints (employee_id is None), any HR with manage_complaints privilege can resolve them
+        hr_employee = EmployeeCRUD.get_employee_by_user_id(db, current_user.id)
+        has_access = False
+        
+        if hr_employee and hr_employee.org_id and complaint.org_id:
+            # Check if both HR and complaint are in the same organization
+            has_access = (hr_employee.org_id == complaint.org_id)
+        elif complaint.hr_email:
+            # Fallback to HR email-based access
+            has_access = (complaint.hr_email == current_user.email)
+        
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. You can only manage complaints from your organization or managed employees."
+            )
         
         # Update complaint status
         updated_complaint = ComplaintCRUD.update_complaint_status(

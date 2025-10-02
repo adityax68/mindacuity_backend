@@ -445,20 +445,21 @@ class ComplaintCRUD:
     @staticmethod
     def create_complaint(db: Session, user_id: int, employee_id: Optional[int], complaint_text: str) -> Complaint:
         """Create a new complaint."""
-        # Get org_id and hr_email from employee record if employee_id is provided
+        # Always get org_id and hr_email from employee record for organization-based filtering
+        # even for anonymous complaints (where employee_id will be None)
         org_id = None
         hr_email = None
         
-        if employee_id:
-            employee = EmployeeCRUD.get_employee_by_id(db, employee_id)
-            if employee:
-                org_id = employee.org_id
-                hr_email = employee.hr_email
+        # Get employee record to extract org_id and hr_email
+        employee = EmployeeCRUD.get_employee_by_user_id(db, user_id)
+        if employee:
+            org_id = employee.org_id
+            hr_email = employee.hr_email
         
         db_complaint = Complaint(
             user_id=user_id,
-            employee_id=employee_id,
-            org_id=org_id,
+            employee_id=employee_id,  # This will be None for anonymous complaints
+            org_id=org_id,  # But org_id and hr_email will still be populated
             hr_email=hr_email,
             complaint_text=complaint_text
         )
@@ -479,30 +480,24 @@ class ComplaintCRUD:
     
     @staticmethod
     def get_all_complaints_for_hr(db: Session, hr_user_id: int, hr_email: str = None) -> List[Complaint]:
-        """Get all complaints for HR to manage (both identified and anonymous)."""
+        """Get all complaints for HR to manage (both identified and anonymous from their organization)."""
         from app.models import Employee
         
         # Try organization-based filtering first
         hr_employee = EmployeeCRUD.get_employee_by_user_id(db, hr_user_id)
         if hr_employee and hr_employee.org_id:
-            # Query complaints directly using org_id field
+            # Query complaints from the same organization (both identified and anonymous)
             complaints = db.query(Complaint).filter(
-                or_(
-                    Complaint.org_id == hr_employee.org_id,
-                    Complaint.employee_id.is_(None)  # Anonymous complaints
-                )
+                Complaint.org_id == hr_employee.org_id
             ).order_by(desc(Complaint.created_at)).all()
             
             return complaints
         
         # Fallback to HR email-based filtering if organization-based doesn't work
         if hr_email:
-            # Query complaints directly using hr_email field
+            # Query complaints managed by this HR (both identified and anonymous)
             complaints = db.query(Complaint).filter(
-                or_(
-                    Complaint.hr_email == hr_email,
-                    Complaint.employee_id.is_(None)  # Anonymous complaints
-                )
+                Complaint.hr_email == hr_email
             ).order_by(desc(Complaint.created_at)).all()
             
             return complaints
