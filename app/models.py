@@ -210,7 +210,7 @@ class Organisation(Base):
     __tablename__ = "organisations"
     
     id = Column(Integer, primary_key=True, index=True)
-    org_id = Column(String, unique=True, index=True, nullable=False)  # Unique identifier like ORG001
+    org_id = Column(String(5), unique=True, index=True, nullable=False)  # Unique 5-character identifier
     org_name = Column(String, nullable=False)
     hr_email = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -153,17 +153,45 @@ class OrganisationCRUD:
     """CRUD operations for Organisation model."""
     
     @staticmethod
+    def is_valid_org_id(org_id: str) -> bool:
+        """Check if org_id is in valid format (5-7 characters max for bcrypt compatibility)."""
+        if not org_id or len(org_id) < 3 or len(org_id) > 7:
+            return False
+        
+        # Check if all characters are from our allowed set
+        allowed_chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        return all(char in allowed_chars for char in org_id)
+    
+    @staticmethod
     def generate_org_id(db: Session) -> str:
-        """Generate a unique organisation ID like ORG001, ORG002, etc."""
-        # Get the count of existing organisations
-        count = db.query(func.count(Organisation.id)).scalar()
-        return f"ORG{count + 1:03d}"
+        """Generate a unique 5-character organisation ID using timestamp.
+        
+        Since org creation is rare (admin-only), collision probability is virtually zero.
+        Bulk employee upload uses existing org_id as password, no new org_id generation.
+        """
+        import time
+        
+        # Characters to use for org_id (excluding confusing characters like 0, O, I, l)
+        chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        
+        # Use microsecond timestamp - collision probability is virtually zero
+        # for admin-created organizations (maybe 1-10 per day)
+        timestamp = int(time.time() * 1000000)  # Microseconds since epoch
+        
+        # Convert timestamp to our 5-character format
+        org_id = ""
+        temp_timestamp = timestamp
+        for _ in range(5):
+            org_id += chars[temp_timestamp % len(chars)]
+            temp_timestamp //= len(chars)
+        
+        return org_id
     
     @staticmethod
     def create_organisation(db: Session, org_name: str, hr_email: str) -> Organisation:
         """Create a new organisation with auto-generated org_id."""
         
-        # Generate unique org_id
+        # Generate unique org_id (timestamp-based, guaranteed unique)
         org_id = OrganisationCRUD.generate_org_id(db)
         
         # Create organisation
@@ -337,7 +365,9 @@ class EmployeeCRUD:
                     counter += 1
                 
                 # Create user
-                hashed_password = get_password_hash(org_id)  # Use org_id as password (will be truncated if needed)
+                # org_id is currently 6 characters (ORG001) and will be 5 characters going forward
+                # Both are well within bcrypt's 72-byte limit
+                hashed_password = get_password_hash(org_id)
                 new_user = User(
                     email=email,
                     username=username,

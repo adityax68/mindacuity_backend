@@ -4,12 +4,39 @@ from app.database import get_db
 from app.auth import get_current_active_user
 from app.crud import EmployeeCRUD, ClinicalAssessmentCRUD, ComplaintCRUD, OrganisationCRUD
 from app.schemas import User, Employee, BulkEmployeeResponse
-from typing import List
+from typing import List, Dict
 import logging
 import csv
 import io
+import time
+
+# Simple in-memory rate limiter
+upload_attempts: Dict[str, List[float]] = {}
+RATE_LIMIT_WINDOW = 300  # 5 minutes
+MAX_UPLOADS_PER_WINDOW = 3  # Max 3 uploads per 5 minutes per user
 
 logger = logging.getLogger(__name__)
+
+def check_rate_limit(user_email: str) -> bool:
+    """Check if user has exceeded rate limit for bulk uploads."""
+    current_time = time.time()
+    
+    # Clean old attempts outside the window
+    if user_email in upload_attempts:
+        upload_attempts[user_email] = [
+            attempt_time for attempt_time in upload_attempts[user_email]
+            if current_time - attempt_time < RATE_LIMIT_WINDOW
+        ]
+    else:
+        upload_attempts[user_email] = []
+    
+    # Check if user has exceeded the limit
+    if len(upload_attempts[user_email]) >= MAX_UPLOADS_PER_WINDOW:
+        return False
+    
+    # Record this attempt
+    upload_attempts[user_email].append(current_time)
+    return True
 
 router = APIRouter(prefix="/hr", tags=["hr"])
 
@@ -229,6 +256,13 @@ async def bulk_employee_access(
                 detail="Access denied. HR role required."
             )
         
+        # Check rate limit
+        if not check_rate_limit(current_user.email):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Rate limit exceeded. Maximum {MAX_UPLOADS_PER_WINDOW} uploads per {RATE_LIMIT_WINDOW//60} minutes."
+            )
+        
         # Get organization for this HR
         organisation = OrganisationCRUD.get_organisation_by_email(db, current_user.email)
         if not organisation:
@@ -244,8 +278,14 @@ async def bulk_employee_access(
                 detail="Only CSV files are allowed."
             )
         
-        # Read and parse CSV file
+        # Check file size (10MB limit)
+        MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
         content = await file.read()
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="File size exceeds 10MB limit. Please use a smaller file."
+            )
         try:
             csv_content = content.decode('utf-8')
         except UnicodeDecodeError:
@@ -254,9 +294,17 @@ async def bulk_employee_access(
                 detail="Invalid file encoding. Please use UTF-8 encoding."
             )
         
-        # Parse CSV
+        # Parse CSV and check row count first
         csv_reader = csv.DictReader(io.StringIO(csv_content))
-        employees_data = list(csv_reader)
+        employees_data = list(csv_reader)  # Read all rows
+        MAX_EMPLOYEES = 100
+        
+        # Check row count immediately - return error before processing
+        if len(employees_data) > MAX_EMPLOYEES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Too many employees. Maximum {MAX_EMPLOYEES} employees per upload. Found {len(employees_data)} employees."
+            )
         
         if not employees_data:
             raise HTTPException(

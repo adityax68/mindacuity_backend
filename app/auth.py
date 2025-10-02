@@ -21,6 +21,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     # Truncate password to 72 bytes to avoid bcrypt limitation
+    # Note: org_ids are currently 6 characters (ORG001) and will be 5 characters going forward
+    # This ensures compatibility with existing data while preventing future issues
     if len(password.encode('utf-8')) > 72:
         password = password.encode('utf-8')[:72].decode('utf-8', errors='ignore')
     return pwd_context.hash(password)
