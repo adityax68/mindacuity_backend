@@ -4,12 +4,19 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from openai import OpenAI
 import logging
-from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
+
+# LangChain imports
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
 from app.models import Conversation, Message, Subscription, ConversationUsage
 from app.schemas import SessionChatMessageRequest, SessionChatResponse
 from app.config import settings
 from app.services.subscription_service import SubscriptionService
+from app.services.message_history_store import MessageHistoryStore
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -24,17 +31,7 @@ class SessionChatService:
         
         self.client = OpenAI(api_key=api_key, timeout=30.0)  # 30 second timeout
         
-        # Initialize encryption key
-        encryption_key = settings.encryption_key
-        if not encryption_key:
-            # Generate a new key if not provided (for development)
-            encryption_key = Fernet.generate_key()
-            logger.warning("ENCRYPTION_KEY not found, using generated key. Set this in production!")
-        else:
-            # Ensure the key is in bytes format
-            encryption_key = encryption_key.encode()
-        
-        self.cipher = Fernet(encryption_key)
+        # No encryption needed for session-based chats
         
         # Initialize subscription service
         self.subscription_service = SubscriptionService()
@@ -140,48 +137,41 @@ WHAT TO ALWAYS DO:
 
 REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental health and emotional well-being topics. Politely decline everything else and redirect to your core purpose."""
 
-    def _encrypt_message(self, message: str) -> str:
-        """Encrypt a message using Fernet"""
-        try:
-            encrypted = self.cipher.encrypt(message.encode())
-            return encrypted.decode()
-        except Exception as e:
-            logger.error(f"Failed to encrypt message: {e}")
-            return message  # Return unencrypted if encryption fails
+        # Initialize LangChain components
+        self._setup_langchain_components()
 
-    def _decrypt_message(self, encrypted_message: str) -> str:
-        """Decrypt a message using Fernet"""
+    def _setup_langchain_components(self):
+        """Setup LangChain components for chat processing."""
         try:
-            decrypted = self.cipher.decrypt(encrypted_message.encode())
-            return decrypted.decode()
+            # Create the base chat model
+            self.chat_model = ChatOpenAI(
+                model="gpt-3.5-turbo",
+                temperature=0.7,
+                max_tokens=500,
+                api_key=settings.openai_api_key
+            )
+            
+            # Create the prompt template with message history placeholder
+            self.prompt = ChatPromptTemplate.from_messages([
+                ("system", self.system_prompt),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("human", "{input}")
+            ])
+            
+            # Create the chain
+            self.chain = self.prompt | self.chat_model
+            
+            logger.info("LangChain components initialized successfully")
+            
         except Exception as e:
-            logger.error(f"Failed to decrypt message: {e}")
-            return "[Message could not be decrypted]"
+            logger.error(f"Failed to initialize LangChain components: {e}")
+            raise
 
-    def _get_conversation_context(self, db: Session, session_identifier: str, max_messages: int = 10) -> List[Dict[str, str]]:
-        """Get conversation context for AI"""
-        try:
-            messages = db.query(Message).filter(
-                Message.session_identifier == session_identifier
-            ).order_by(Message.created_at.desc()).limit(max_messages).all()
-            
-            context = []
-            for message in reversed(messages):  # Reverse to get chronological order
-                context.append({
-                    "role": message.role,
-                    "content": self._decrypt_message(message.encrypted_content) if message.encrypted_content else message.content
-                })
-            
-            return context
-            
-        except Exception as e:
-            logger.error(f"Failed to get conversation context: {e}")
-            # CRITICAL: Rollback the transaction to prevent invalid transaction state
-            try:
-                db.rollback()
-            except Exception as rollback_error:
-                logger.error(f"Failed to rollback transaction: {rollback_error}")
-            return []
+    def _get_message_history_store(self, db: Session) -> MessageHistoryStore:
+        """Get or create a message history store for the database session."""
+        return MessageHistoryStore(db=db)
+
+
 
     async def process_chat_message(self, db: Session, session_identifier: str, chat_request: SessionChatMessageRequest) -> SessionChatResponse:
         """Process a chat message and return AI response"""
@@ -212,49 +202,30 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
             # Create or get conversation
             conversation = self.subscription_service.create_or_get_conversation(db, session_identifier)
             
-            # Store user message
-            user_message = Message(
-                session_identifier=session_identifier,
-                role="user",
-                content=chat_request.message,
-                encrypted_content=self._encrypt_message(chat_request.message)
+            # Get message history store for this session
+            history_store = self._get_message_history_store(db)
+            
+            # Create the runnable with message history
+            runnable_with_history = RunnableWithMessageHistory(
+                self.chain,
+                lambda session_id: history_store.get_chat_history(session_id),
+                input_messages_key="input",
+                history_messages_key="chat_history"
             )
-            db.add(user_message)
-            db.commit()
-            db.refresh(user_message)
             
-            # Get conversation context
-            context = self._get_conversation_context(db, session_identifier)
-            
-            # Prepare messages for OpenAI
-            messages = [{"role": "system", "content": self.system_prompt}]
-            messages.extend(context)
-            
-            # Get AI response with timeout handling
+            # Get AI response using LangChain (this handles context and message saving automatically)
             try:
-                response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=messages,
-                    max_tokens=500,
-                    temperature=0.7
+                response = await runnable_with_history.ainvoke(
+                    {"input": chat_request.message},
+                    config={"configurable": {"session_id": session_identifier}}
                 )
                 
-                ai_message_content = response.choices[0].message.content
+                ai_message_content = response.content
+                
             except Exception as ai_error:
-                logger.error(f"OpenAI API error: {ai_error}")
+                logger.error(f"LangChain/OpenAI API error: {ai_error}")
                 # Fallback response if AI service fails
                 ai_message_content = "I'm sorry, I'm having trouble processing your message right now. Please try again in a moment."
-            
-            # Store AI response
-            ai_message = Message(
-                session_identifier=session_identifier,
-                role="assistant",
-                content=ai_message_content,
-                encrypted_content=self._encrypt_message(ai_message_content)
-            )
-            db.add(ai_message)
-            db.commit()
-            db.refresh(ai_message)
             
             # Only increment usage counter AFTER successful AI response
             self.subscription_service.increment_usage(db, session_identifier)
@@ -293,19 +264,22 @@ REMEMBER: You are Acutie, a MENTAL HEALTH SPECIALIST. Only respond to mental hea
             )
 
     def get_conversation_messages(self, db: Session, session_identifier: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get conversation messages for a session"""
+        """Get conversation messages for a session using LangChain history"""
         try:
-            messages = db.query(Message).filter(
-                Message.session_identifier == session_identifier
-            ).order_by(Message.created_at.asc()).limit(limit).all()
+            history_store = self._get_message_history_store(db)
+            chat_history = history_store.get_chat_history(session_identifier)
             
+            # Get messages from LangChain history
+            messages = chat_history.messages
+            
+            # Convert to the format expected by the API
             result = []
-            for message in messages:
+            for i, message in enumerate(messages[-limit:]):  # Limit to last N messages
                 result.append({
-                    "id": message.id,
-                    "role": message.role,
-                    "content": self._decrypt_message(message.encrypted_content) if message.encrypted_content else message.content,
-                    "created_at": message.created_at.isoformat()
+                    "id": i + 1,  # Simple ID for API compatibility
+                    "role": "user" if isinstance(message, HumanMessage) else "assistant",
+                    "content": message.content,
+                    "created_at": datetime.now()  # Use current time as fallback
                 })
             
             return result

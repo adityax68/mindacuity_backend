@@ -16,6 +16,11 @@ email-validator>=2.0.0
 openai>=1.0.0
 cryptography>=41.0.0
 
+# LangChain Dependencies
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-core>=0.1.0
+
 # Document Processing Dependencies
 PyPDF2>=3.0.0
 python-docx>=0.8.11
