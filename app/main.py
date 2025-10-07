@@ -41,8 +41,8 @@ else:
         "http://localhost:5173",          # Vite dev server
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
-        # React Native development
-        "*"  # Allow all origins in development only
+        "https://localhost:5173",         # HTTPS for Google OAuth
+        "https://127.0.0.1:5173",        # HTTPS for Google OAuth
     ]
 
 # Debug CORS configuration
@@ -67,6 +67,20 @@ app.add_middleware(
     ],
     expose_headers=["*"],
 )
+
+# Add custom middleware to handle Cross-Origin-Opener-Policy
+from fastapi import Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class COOPMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # Set Cross-Origin-Opener-Policy to allow Google OAuth popups
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+        response.headers["Cross-Origin-Embedder-Policy"] = "unsafe-none"
+        return response
+
+app.add_middleware(COOPMiddleware)
 
 # Include routers
 app.include_router(auth.router, prefix=settings.api_v1_prefix)

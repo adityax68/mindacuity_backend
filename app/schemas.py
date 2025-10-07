@@ -6,7 +6,7 @@ from app.clinical_assessments import AssessmentType, QuestionResponse, SeverityL
 # User schemas
 class UserBase(BaseModel):
     email: EmailStr
-    username: str
+    username: Optional[str] = None  # Optional for Google OAuth users
     full_name: Optional[str] = None
 
 class UserCreate(UserBase):
@@ -19,6 +19,17 @@ class UserCreate(UserBase):
     city: Optional[str] = None
     pincode: Optional[str] = None
 
+# NEW: Google OAuth schemas
+class GoogleOAuthRequest(BaseModel):
+    google_token: str = Field(..., description="Google ID token from frontend")
+
+class GoogleOAuthResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+    user: "User"
+    is_new_user: bool = False
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
@@ -29,11 +40,14 @@ class User(UserBase):
     privileges: List[str]  # NEW: Add privileges
     is_active: bool
     # NEW: User profile fields
-    age: int
+    age: Optional[int] = None  # Optional for Google OAuth users
     country: Optional[str] = None
     state: Optional[str] = None
     city: Optional[str] = None
     pincode: Optional[str] = None
+    # NEW: Google OAuth fields
+    google_id: Optional[str] = None
+    auth_provider: str = "local"
     created_at: datetime
     
     class Config:

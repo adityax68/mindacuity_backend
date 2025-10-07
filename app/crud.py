@@ -20,6 +20,11 @@ class UserCRUD:
         return db.query(User).filter(User.username == username).first()
     
     @staticmethod
+    def get_user_by_google_id(db: Session, google_id: str) -> Optional[User]:
+        """Get user by Google ID."""
+        return db.query(User).filter(User.google_id == google_id).first()
+    
+    @staticmethod
     def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
         """Get user by ID."""
         return db.query(User).filter(User.id == user_id).first()
@@ -38,12 +43,47 @@ class UserCRUD:
             country=getattr(user, 'country', None),  # NEW: Add optional profile fields
             state=getattr(user, 'state', None),
             city=getattr(user, 'city', None),
-            pincode=getattr(user, 'pincode', None)
+            pincode=getattr(user, 'pincode', None),
+            auth_provider="local"  # NEW: Set auth provider
         )
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
         return db_user
+    
+    @staticmethod
+    def create_google_user(db: Session, google_user_info: dict) -> User:
+        """Create a new user from Google OAuth info."""
+        db_user = User(
+            email=google_user_info['email'],
+            username=None,  # Google users don't need username
+            full_name=google_user_info.get('name', ''),
+            hashed_password=None,  # Google users don't have password
+            google_id=google_user_info['google_id'],
+            auth_provider="google",
+            role="user",  # Default role
+            age=None,  # Google users can set this later
+            country=None,
+            state=None,
+            city=None,
+            pincode=None,
+            is_verified=google_user_info.get('email_verified', False)
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    
+    @staticmethod
+    def update_user_google_info(db: Session, user: User, google_user_info: dict) -> User:
+        """Update existing user with Google OAuth info."""
+        user.google_id = google_user_info['google_id']
+        user.auth_provider = "google"
+        user.full_name = google_user_info.get('name', user.full_name)
+        user.is_verified = google_user_info.get('email_verified', user.is_verified)
+        db.commit()
+        db.refresh(user)
+        return user
     
     @staticmethod
     def get_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:

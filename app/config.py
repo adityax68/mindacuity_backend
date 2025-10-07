@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
     s3_base_url: str = os.getenv("S3_BASE_URL", "")
     
+    # Google OAuth Configuration
+    google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

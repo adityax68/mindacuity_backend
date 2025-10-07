@@ -6,9 +6,10 @@ from datetime import timedelta
 from app.database import get_db
 from app.auth import verify_password, create_access_token, create_refresh_token, store_refresh_token, verify_refresh_token, revoke_refresh_token, revoke_all_user_tokens, get_current_active_user, get_user_info
 from app.crud import UserCRUD
-from app.schemas import UserCreate, User, Token, RefreshTokenRequest, RefreshTokenResponse, TokenRevokeRequest, TokenStatusResponse
+from app.schemas import UserCreate, User, Token, RefreshTokenRequest, RefreshTokenResponse, TokenRevokeRequest, TokenStatusResponse, GoogleOAuthRequest, GoogleOAuthResponse
 from app.config import settings
 from app.services.role_service import RoleService
+from app.services.google_oauth_service import GoogleOAuthService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -302,6 +303,128 @@ async def check_token_status(current_user: User = Depends(get_current_active_use
     
     except Exception as e:
         logger.error(f"Unexpected error during token status check: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again."
+        )
+
+@router.post("/google", response_model=GoogleOAuthResponse)
+async def google_oauth(request: GoogleOAuthRequest, db: Session = Depends(get_db)):
+    """
+    Authenticate user with Google OAuth.
+    
+    - **google_token**: Google ID token from frontend
+    """
+    try:
+        # Initialize Google OAuth service
+        google_service = GoogleOAuthService()
+        
+        # Verify Google token
+        google_user_info = await google_service.verify_google_token(request.google_token)
+        if not google_user_info:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Google token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Check if email is verified
+        if not google_service.is_email_verified(google_user_info):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email not verified by Google"
+            )
+        
+        # Check if user exists by Google ID
+        user = UserCRUD.get_user_by_google_id(db, google_user_info['google_id'])
+        is_new_user = False
+        
+        if not user:
+            # Check if user exists by email (for linking existing accounts)
+            user = UserCRUD.get_user_by_email(db, google_user_info['email'])
+            
+            if user:
+                # Link existing user with Google account
+                user = UserCRUD.update_user_google_info(db, user, google_user_info)
+                logger.info(f"Linked existing user {user.email} with Google account")
+            else:
+                # Create new user
+                user = UserCRUD.create_google_user(db, google_user_info)
+                is_new_user = True
+                logger.info(f"Created new Google user: {user.email}")
+        else:
+            # Update user info from Google
+            user.full_name = google_service.get_user_display_name(google_user_info)
+            user.is_verified = google_user_info.get('email_verified', user.is_verified)
+            db.commit()
+            db.refresh(user)
+            logger.info(f"Updated Google user info: {user.email}")
+        
+        # Check if user is active
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Inactive user"
+            )
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+        access_token = create_access_token(
+            data={"sub": user.email}, expires_delta=access_token_expires
+        )
+        
+        # Create refresh token
+        refresh_token = create_refresh_token()
+        store_refresh_token(user.id, refresh_token, db)
+        
+        # Get user privileges
+        role_service = RoleService(db)
+        privileges = await role_service.get_user_privileges(user.id)
+        
+        # Create user response with privileges
+        user_response = User(
+            id=user.id,
+            email=user.email,
+            username=user.username,
+            full_name=user.full_name,
+            role=user.role,
+            privileges=list(privileges),
+            is_active=user.is_active,
+            age=user.age,
+            country=user.country,
+            state=user.state,
+            city=user.city,
+            pincode=user.pincode,
+            google_id=user.google_id,
+            auth_provider=user.auth_provider,
+            created_at=user.created_at
+        )
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "user": user_response,
+            "is_new_user": is_new_user
+        }
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
+    except OperationalError as e:
+        logger.error(f"Database connection error during Google OAuth: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service temporarily unavailable. Please try again in a moment."
+        )
+    except IntegrityError as e:
+        logger.error(f"Database integrity error during Google OAuth: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User account conflict. Please contact support."
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during Google OAuth: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred. Please try again."
