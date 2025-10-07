@@ -10,7 +10,6 @@ Usage:
     python scripts/manage_alembic.py history                # Show migration history
     python scripts/manage_alembic.py current                # Show current revision
     python scripts/manage_alembic.py create "message"       # Create new migration
-    python scripts/manage_alembic.py reset                  # Reset database (DANGEROUS!)
 """
 
 import sys
@@ -60,9 +59,6 @@ def main():
     create_parser = subparsers.add_parser('create', help='Create new migration')
     create_parser.add_argument('message', help='Migration message')
     
-    # Reset command
-    reset_parser = subparsers.add_parser('reset', help='Reset database (DANGEROUS!)')
-    reset_parser.add_argument('--confirm', action='store_true', help='Skip confirmation prompt')
     
     args = parser.parse_args()
     
@@ -99,24 +95,6 @@ def main():
         message = args.message
         success = run_alembic_command(f'revision --autogenerate -m "{message}"', f"Creating new migration: {message}")
     
-    elif args.command == 'reset':
-        if not args.confirm:
-            print("⚠️  WARNING: This will DROP ALL TABLES and reset your database!")
-            print("   This action cannot be undone!")
-            confirm = input("Are you sure? Type 'yes' to continue: ")
-            if confirm.lower() != 'yes':
-                print("❌ Database reset cancelled")
-                return
-        
-        print("🔄 Resetting database...")
-        # First downgrade to base (removes all tables)
-        success1 = run_alembic_command("downgrade base", "Downgrading to base (removing all tables)")
-        # Then upgrade to head (recreates all tables)
-        success2 = run_alembic_command("upgrade head", "Upgrading to head (recreating all tables)")
-        success = success1 and success2
-        
-        if success:
-            print("✅ Database reset completed successfully!")
     
     sys.exit(0 if success else 1)
 
