@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     
     # Google OAuth Configuration
     google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    google_android_client_id: str = os.getenv("GOOGLE_ANDROID_CLIENT_ID", "")
+    google_ios_client_id: str = os.getenv("GOOGLE_IOS_CLIENT_ID", "")
     
     class Config:
         env_file = ".env"

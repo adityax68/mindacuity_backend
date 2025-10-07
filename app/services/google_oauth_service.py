@@ -10,7 +10,13 @@ class GoogleOAuthService:
     """Service for handling Google OAuth authentication"""
     
     def __init__(self):
-        self.client_id = settings.google_client_id
+        self.client_ids = [
+            settings.google_client_id,
+            settings.google_android_client_id,
+            settings.google_ios_client_id
+        ]
+        # Filter out empty client IDs
+        self.client_ids = [cid for cid in self.client_ids if cid]
     
     async def verify_google_token(self, token: str) -> Optional[Dict[str, Any]]:
         """
@@ -23,12 +29,22 @@ class GoogleOAuthService:
             Dict containing user info if valid, None if invalid
         """
         try:
-            # Verify the token
-            idinfo = id_token.verify_oauth2_token(
-                token, 
-                requests.Request(), 
-                self.client_id
-            )
+            # Try to verify the token with any of the allowed client IDs
+            idinfo = None
+            for client_id in self.client_ids:
+                try:
+                    idinfo = id_token.verify_oauth2_token(
+                        token, 
+                        requests.Request(), 
+                        client_id
+                    )
+                    break  # If successful, break out of the loop
+                except ValueError:
+                    continue  # Try next client ID
+            
+            if not idinfo:
+                logger.error("Token verification failed for all client IDs")
+                return None
             
             # Verify the issuer
             if idinfo['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
