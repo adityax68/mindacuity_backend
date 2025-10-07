@@ -23,17 +23,21 @@ class User(Base):
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    username = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    full_name = Column(String)
+    email = Column(String, unique=True, index=True, nullable=False)  # Always required
+    username = Column(String, unique=True, index=True, nullable=True)  # Optional for Google OAuth
+    hashed_password = Column(String, nullable=True)  # Optional for Google OAuth
+    full_name = Column(String, nullable=True)  # Optional for Google OAuth
     
     # NEW: User profile fields
-    age = Column(Integer, nullable=False)  # Mandatory field
+    age = Column(Integer, nullable=True)  # Optional for Google OAuth
     country = Column(String, nullable=True)  # Optional
     state = Column(String, nullable=True)  # Optional
     city = Column(String, nullable=True)  # Optional
     pincode = Column(String, nullable=True)  # Optional
+    
+    # NEW: Google OAuth fields
+    google_id = Column(String, unique=True, index=True, nullable=True)
+    auth_provider = Column(String, default="local")  # "local" or "google"
     
     # NEW: Role system
     role = Column(String, default="user")  # "user" or "admin"
