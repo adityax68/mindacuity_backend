@@ -4,6 +4,12 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# Setup logging first
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from logging_config import setup_logging
+setup_logging()
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -68,16 +74,52 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Add custom middleware to handle Cross-Origin-Opener-Policy
+# Add custom middleware to handle Cross-Origin-Opener-Policy and logging
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 class COOPMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # Log incoming request
+        start_time = time.time()
+        logger.info(f"=== INCOMING REQUEST ===")
+        logger.info(f"Method: {request.method}")
+        logger.info(f"URL: {request.url}")
+        logger.info(f"Path: {request.url.path}")
+        logger.info(f"Query params: {dict(request.query_params)}")
+        logger.info(f"Headers: {dict(request.headers)}")
+        logger.info(f"Client IP: {request.client.host if request.client else 'Unknown'}")
+        
+        # Special logging for Google OAuth endpoint
+        if request.url.path == "/api/v1/auth/google":
+            logger.info("*** GOOGLE OAUTH ENDPOINT HIT ***")
+            if request.method == "POST":
+                try:
+                    # Try to read the body for logging (but don't consume it)
+                    body = await request.body()
+                    logger.info(f"Request body size: {len(body)} bytes")
+                    if body:
+                        logger.info(f"Request body preview: {body[:200]}...")
+                except Exception as e:
+                    logger.warning(f"Could not read request body: {e}")
+        
         response = await call_next(request)
+        
+        # Log response
+        process_time = time.time() - start_time
+        logger.info(f"=== RESPONSE ===")
+        logger.info(f"Status: {response.status_code}")
+        logger.info(f"Process time: {process_time:.3f}s")
+        logger.info(f"Response headers: {dict(response.headers)}")
+        
         # Set Cross-Origin-Opener-Policy to allow Google OAuth popups
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
         response.headers["Cross-Origin-Embedder-Policy"] = "unsafe-none"
+        
         return response
 
 app.add_middleware(COOPMiddleware)
