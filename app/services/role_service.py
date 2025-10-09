@@ -120,24 +120,19 @@ class RoleService:
         self.db.commit()
     
     async def get_user_privileges(self, user_id: int) -> Set[str]:
-        """Get all privileges for a user"""
+        """Get all privileges for a user based on their role only"""
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
             return set()
         
-        # Get role-based privileges
+        # Get role-based privileges only (no user-specific privileges)
         role_privileges = set()
         if user.role:
             role = self.db.query(Role).filter(Role.name == user.role).first()
             if role:
                 role_privileges = {priv.name for priv in role.privileges}
         
-        # Get user-specific privileges (for future custom assignments)
-        user_privileges = {priv.name for priv in user.privileges}
-        
-        # Combine both
-        all_privileges = role_privileges.union(user_privileges)
-        return all_privileges
+        return role_privileges
     
     async def user_has_privilege(self, user_id: int, privilege_name: str) -> bool:
         """Check if user has specific privilege"""

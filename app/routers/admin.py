@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.auth import get_current_user, require_role
+from app.auth import get_current_user
 from app.models import User, Role, Privilege, Employee as EmployeeModel, Organisation
 from app.schemas import UserResponse, RoleResponse, PrivilegeResponse, UserRoleUpdate, OrganisationCreate, OrganisationResponse, Employee, ResearchCreate, ResearchUpdate, Research, ResearchListResponse
 from app.services.role_service import RoleService
@@ -30,19 +30,20 @@ async def get_all_users(
     # Get total count efficiently
     total_count = db.query(User).count()
     
-    # Single query with eager loading to avoid N+1 problem
-    from sqlalchemy.orm import joinedload
-    
+    # Single query without eager loading user privileges (we'll get role-based privileges)
     users = db.query(User)\
-        .options(joinedload(User.privileges))\
         .order_by(User.created_at.desc())\
         .offset(skip).limit(limit).all()
     
     # Build response efficiently
     user_responses = []
     for user in users:
-        # Get user-specific privileges (already loaded via eager loading)
-        user_privileges = {priv.name for priv in user.privileges}
+        # Get role-based privileges only
+        role_privileges = set()
+        if user.role:
+            role = db.query(Role).filter(Role.name == user.role).first()
+            if role:
+                role_privileges = {priv.name for priv in role.privileges}
         
         user_responses.append(UserResponse(
             id=user.id,
@@ -50,7 +51,7 @@ async def get_all_users(
             username=user.username,
             full_name=user.full_name,
             role=user.role,
-            privileges=list(user_privileges),
+            privileges=list(role_privileges),
             is_active=user.is_active,
             age=user.age,
             country=user.country,
