@@ -57,13 +57,13 @@ class User(UserBase):
 class UserResponse(BaseModel):
     id: int
     email: str
-    username: str
+    username: Optional[str] = None  # Optional for Google OAuth users
     full_name: Optional[str]
     role: str
     privileges: List[str]
     is_active: bool
     # NEW: User profile fields
-    age: int
+    age: Optional[int] = None  # Optional for Google OAuth users
     country: Optional[str] = None
     state: Optional[str] = None
     city: Optional[str] = None
