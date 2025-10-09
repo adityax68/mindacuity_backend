@@ -33,16 +33,18 @@ app = FastAPI(
 # CORS configuration
 # In development, be more permissive for React Native
 if os.getenv("ENVIRONMENT") == "production":
-    # Production: strict CORS
+    # Production: strict CORS - include all possible frontend domains
     allowed_origins = [
         "https://mindacuity.ai",
         "https://www.mindacuity.ai",
+        "https://api.mindacuity.ai",      # Allow API domain for internal requests
     ]
 else:
     # Development: allow web and mobile development
     allowed_origins = [
         "https://mindacuity.ai",
         "https://www.mindacuity.ai",
+        "https://api.mindacuity.ai",      # Allow API domain for internal requests
         "http://localhost:3000",          # React web dev
         "http://localhost:5173",          # Vite dev server
         "http://127.0.0.1:3000",
@@ -53,13 +55,15 @@ else:
 
 # Debug CORS configuration
 print(f"CORS allowed origins: {allowed_origins}")
+print(f"Environment: {os.getenv('ENVIRONMENT', 'development')}")
+print(f"Production mode: {os.getenv('ENVIRONMENT') == 'production'}")
 
-# Add CORS middleware
+# Add CORS middleware with more permissive settings for production
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
     allow_headers=[
         "Accept",
         "Accept-Language",
@@ -70,8 +74,11 @@ app.add_middleware(
         "Origin",
         "Access-Control-Request-Method",
         "Access-Control-Request-Headers",
+        "Cache-Control",
+        "Pragma",
     ],
     expose_headers=["*"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # Add custom middleware to handle Cross-Origin-Opener-Policy and logging
@@ -93,6 +100,8 @@ class COOPMiddleware(BaseHTTPMiddleware):
         logger.info(f"Query params: {dict(request.query_params)}")
         logger.info(f"Headers: {dict(request.headers)}")
         logger.info(f"Client IP: {request.client.host if request.client else 'Unknown'}")
+        logger.info(f"Origin header: {request.headers.get('origin', 'No origin header')}")
+        logger.info(f"Referer header: {request.headers.get('referer', 'No referer header')}")
         
         # Special logging for Google OAuth endpoint
         if request.url.path == "/api/v1/auth/google":
@@ -119,6 +128,12 @@ class COOPMiddleware(BaseHTTPMiddleware):
         # Set Cross-Origin-Opener-Policy to allow Google OAuth popups
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
         response.headers["Cross-Origin-Embedder-Policy"] = "unsafe-none"
+        
+        # Log CORS headers for debugging
+        logger.info(f"CORS headers in response:")
+        logger.info(f"  Access-Control-Allow-Origin: {response.headers.get('access-control-allow-origin', 'Not set')}")
+        logger.info(f"  Access-Control-Allow-Methods: {response.headers.get('access-control-allow-methods', 'Not set')}")
+        logger.info(f"  Access-Control-Allow-Headers: {response.headers.get('access-control-allow-headers', 'Not set')}")
         
         return response
 
@@ -153,6 +168,33 @@ async def root():
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "service": "clinical-mental-health-api"}
+
+@app.options("/{path:path}")
+async def options_handler(path: str, request: Request):
+    """Handle OPTIONS requests for CORS preflight."""
+    origin = request.headers.get("origin")
+    
+    # Check if origin is in allowed origins
+    if origin in allowed_origins:
+        return JSONResponse(
+            status_code=200,
+            content={},
+            headers={
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD",
+                "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Cache-Control, Pragma",
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Max-Age": "3600",
+            }
+        )
+    else:
+        return JSONResponse(
+            status_code=403,
+            content={"error": "CORS policy violation"},
+            headers={
+                "Access-Control-Allow-Origin": "null",
+            }
+        )
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
