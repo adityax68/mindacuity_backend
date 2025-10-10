@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 import logging
@@ -36,7 +37,7 @@ async def verify_email(
     db: Session = Depends(get_db)
 ):
     """
-    Verify email address with verification token
+    Verify email address with verification token (POST endpoint for API calls)
     
     - **token**: Email verification token from the verification email
     """
@@ -65,6 +66,105 @@ async def verify_email(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error during email verification"
         )
+
+@router.get("/verify-email", response_class=HTMLResponse)
+async def verify_email_get(
+    token: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Verify email address with verification token (GET endpoint for email links)
+    
+    - **token**: Email verification token from the verification email
+    """
+    try:
+        success, message = await email_verification_service.verify_email(
+            token=token,
+            db=db
+        )
+        
+        if success:
+            # Return a success HTML page
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Email Verified - MindAcuity</title>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <style>
+                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f5f5f5; }}
+                    .container {{ max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                    .success {{ color: #28a745; font-size: 24px; margin-bottom: 20px; }}
+                    .message {{ color: #333; font-size: 16px; margin-bottom: 30px; }}
+                    .button {{ background-color: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="success">✅ Email Verified Successfully!</div>
+                    <div class="message">{message}</div>
+                    <a href="https://mindacuity.ai/login" class="button">Go to Login</a>
+                </div>
+            </body>
+            </html>
+            """
+            return HTMLResponse(content=html_content)
+        else:
+            # Return an error HTML page
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Verification Failed - MindAcuity</title>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <style>
+                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f5f5f5; }}
+                    .container {{ max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                    .error {{ color: #dc3545; font-size: 24px; margin-bottom: 20px; }}
+                    .message {{ color: #333; font-size: 16px; margin-bottom: 30px; }}
+                    .button {{ background-color: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="error">❌ Verification Failed</div>
+                    <div class="message">{message}</div>
+                    <a href="https://mindacuity.ai/login" class="button">Go to Login</a>
+                </div>
+            </body>
+            </html>
+            """
+            return HTMLResponse(content=html_content)
+            
+    except Exception as e:
+        logger.error(f"Error in verify_email_get endpoint: {e}")
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Verification Error - MindAcuity</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f5f5f5; }}
+                .container {{ max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                .error {{ color: #dc3545; font-size: 24px; margin-bottom: 20px; }}
+                .message {{ color: #333; font-size: 16px; margin-bottom: 30px; }}
+                .button {{ background-color: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="error">❌ Verification Error</div>
+                <div class="message">An internal error occurred during verification. Please try again later.</div>
+                <a href="https://mindacuity.ai/login" class="button">Go to Login</a>
+            </div>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html_content)
 
 @router.post("/resend-verification", response_model=ResendVerificationResponse)
 async def resend_verification(
