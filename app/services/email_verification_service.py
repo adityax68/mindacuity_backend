@@ -105,7 +105,10 @@ class EmailVerificationService:
             db.commit()
             
             # Create verification URL - point to backend API endpoint
-            verification_url = f"https://api.mindacuity.ai/api/v1/auth/verify-email?token={token}"
+            # Use environment variable for base URL, fallback to localhost for development
+            import os
+            base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+            verification_url = f"{base_url}/api/v1/auth/verify-email?token={token}"
             
             # Send verification email
             result = await self._send_verification_email_template(

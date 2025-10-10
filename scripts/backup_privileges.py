@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Script to backup the privilege system
+Script to backup the role-based privilege system
+This script backs up only role-based privileges (no user-specific privileges).
 Usage: python backup_privileges.py [--output backup_file.json]
 """
 
@@ -17,7 +18,7 @@ from app.config import settings
 from app.models import User, Role, Privilege
 
 def backup_privileges(output_file=None):
-    """Backup the privilege system to JSON file"""
+    """Backup the role-based privilege system to JSON file"""
     
     # Create engine
     engine = create_engine(settings.database_url)
@@ -25,7 +26,7 @@ def backup_privileges(output_file=None):
     db = SessionLocal()
     
     try:
-        print("💾 Creating privilege system backup...")
+        print("💾 Creating role-based privilege system backup...")
         
         # Generate filename if not provided
         if not output_file:
@@ -38,7 +39,7 @@ def backup_privileges(output_file=None):
             "privileges": [],
             "roles": [],
             "role_privileges": [],
-            "users": []
+            "users_with_roles": []
         }
         
         # Backup privileges
@@ -77,15 +78,23 @@ def backup_privileges(output_file=None):
                     "privilege_name": priv.name
                 })
         
-        # Backup users (basic info only)
-        print("  👤 Backing up users...")
+        # Backup users with their role information (role-based system only)
+        print("  👤 Backing up users with role assignments...")
         users = db.query(User).all()
         for user in users:
-            backup_data["users"].append({
+            # Get privileges for this user through their role
+            user_privileges = []
+            if user.role:
+                role = db.query(Role).filter(Role.name == user.role).first()
+                if role:
+                    user_privileges = [priv.name for priv in role.privileges]
+            
+            backup_data["users_with_roles"].append({
                 "id": user.id,
                 "email": user.email,
                 "username": user.username,
                 "role": user.role,
+                "role_privileges": user_privileges,
                 "is_active": user.is_active,
                 "created_at": user.created_at.isoformat() if user.created_at else None
             })
@@ -99,9 +108,9 @@ def backup_privileges(output_file=None):
         print(f"     - {len(backup_data['privileges'])} privileges")
         print(f"     - {len(backup_data['roles'])} roles")
         print(f"     - {len(backup_data['role_privileges'])} role-privilege relationships")
-        print(f"     - {len(backup_data['users'])} users")
+        print(f"     - {len(backup_data['users_with_roles'])} users with role assignments")
         
-        print(f"\n✅ Privilege system backup completed successfully!")
+        print(f"\n✅ Role-based privilege system backup completed successfully!")
         
     except Exception as e:
         print(f"❌ Error creating backup: {str(e)}")
@@ -110,7 +119,7 @@ def backup_privileges(output_file=None):
         db.close()
 
 def main():
-    parser = argparse.ArgumentParser(description='Backup the privilege system')
+    parser = argparse.ArgumentParser(description='Backup the role-based privilege system')
     parser.add_argument('--output', help='Output file name (default: privilege_backup_YYYYMMDD_HHMMSS.json)')
     
     args = parser.parse_args()
