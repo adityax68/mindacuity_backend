@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
     s3_base_url: str = os.getenv("S3_BASE_URL", "")
     
+    # AWS SES Configuration
+    ses_from_email: str = os.getenv("SES_FROM_EMAIL", "noreply@mindacuity.ai")
+    ses_from_name: str = os.getenv("SES_FROM_NAME", "MindAcuity")
+    ses_reply_to: str = os.getenv("SES_REPLY_TO", "support@mindacuity.ai")
+    ses_configuration_set: str = os.getenv("SES_CONFIGURATION_SET", "")
+    ses_bounce_topic_arn: str = os.getenv("SES_BOUNCE_TOPIC_ARN", "")
+    ses_complaint_topic_arn: str = os.getenv("SES_COMPLAINT_TOPIC_ARN", "")
+    ses_delivery_topic_arn: str = os.getenv("SES_DELIVERY_TOPIC_ARN", "")
+    
     # Google OAuth Configuration
     google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
     google_android_client_id: str = os.getenv("GOOGLE_ANDROID_CLIENT_ID", "")

@@ -28,6 +28,9 @@ python-docx>=0.8.11
 # AWS S3 Dependencies
 boto3>=1.34.0
 
+# AWS SES Dependencies
+botocore>=1.34.0
+
 # Google OAuth Dependencies
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0

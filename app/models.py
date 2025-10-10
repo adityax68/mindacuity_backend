@@ -44,6 +44,12 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     
+    # NEW: Email verification fields
+    email_verification_token = Column(String, nullable=True, index=True)
+    email_verification_expires_at = Column(DateTime(timezone=True), nullable=True)
+    email_verification_attempts = Column(Integer, default=0)
+    last_verification_attempt = Column(DateTime(timezone=True), nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
@@ -345,3 +351,110 @@ class Research(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+# Email System Models
+
+class EmailLog(Base):
+    __tablename__ = "email_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    recipient_email = Column(String(255), nullable=False, index=True)
+    template_name = Column(String(100), nullable=False)
+    subject = Column(String(255), nullable=False)
+    status = Column(String(50), nullable=False)  # sent, delivered, bounced, complained, failed
+    message_id = Column(String(255), nullable=True, index=True)
+    
+    # Timestamps
+    sent_at = Column(DateTime(timezone=True), server_default=func.now())
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+    bounced_at = Column(DateTime(timezone=True), nullable=True)
+    complained_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Bounce details
+    bounce_type = Column(String(50), nullable=True)  # Permanent, Transient
+    bounce_subtype = Column(String(50), nullable=True)  # General, NoEmail, Suppressed, etc.
+    bounce_reason = Column(Text, nullable=True)
+    
+    # Error details
+    error_message = Column(Text, nullable=True)
+    
+    # Template data (for analytics)
+    template_data = Column(JSON, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+class EmailUnsubscribe(Base):
+    __tablename__ = "email_unsubscribes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    reason = Column(Text, nullable=True)
+    unsubscribed_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Additional tracking
+    source = Column(String(100), nullable=True)  # bounce, complaint, manual, user_request
+    ip_address = Column(String(45), nullable=True)  # For manual unsubscribes
+    user_agent = Column(Text, nullable=True)  # For manual unsubscribes
+
+class EmailTemplate(Base):
+    __tablename__ = "email_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    version = Column(Integer, default=1)
+    subject_template = Column(Text, nullable=False)
+    html_template = Column(Text, nullable=False)
+    text_template = Column(Text, nullable=True)
+    
+    # Template metadata
+    description = Column(Text, nullable=True)
+    category = Column(String(50), nullable=True)  # auth, notification, marketing, etc.
+    is_active = Column(Boolean, default=True)
+    
+    # Usage tracking
+    usage_count = Column(Integer, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+class EmailBounce(Base):
+    __tablename__ = "email_bounces"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    message_id = Column(String(255), nullable=True, index=True)
+    bounce_type = Column(String(50), nullable=False)  # Permanent, Transient
+    bounce_subtype = Column(String(50), nullable=False)
+    bounce_reason = Column(Text, nullable=True)
+    diagnostic_code = Column(String(255), nullable=True)
+    
+    # SES notification data
+    notification_timestamp = Column(DateTime(timezone=True), nullable=True)
+    feedback_id = Column(String(255), nullable=True)
+    
+    # Processing status
+    is_processed = Column(Boolean, default=False)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class EmailComplaint(Base):
+    __tablename__ = "email_complaints"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    message_id = Column(String(255), nullable=True, index=True)
+    complaint_type = Column(String(50), nullable=True)  # abuse, fraud, etc.
+    complaint_reason = Column(Text, nullable=True)
+    
+    # SES notification data
+    notification_timestamp = Column(DateTime(timezone=True), nullable=True)
+    feedback_id = Column(String(255), nullable=True)
+    
+    # Processing status
+    is_processed = Column(Boolean, default=False)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

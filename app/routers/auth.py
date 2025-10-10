@@ -2,11 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError, IntegrityError
-from datetime import timedelta
+from datetime import timedelta, datetime
 from app.database import get_db
 from app.auth import verify_password, create_access_token, create_refresh_token, store_refresh_token, verify_refresh_token, revoke_refresh_token, revoke_all_user_tokens, get_current_active_user, get_user_info
 from app.crud import UserCRUD
-from app.schemas import UserCreate, User, Token, RefreshTokenRequest, RefreshTokenResponse, TokenRevokeRequest, TokenStatusResponse, GoogleOAuthRequest, GoogleOAuthResponse
+from app.schemas import UserCreate, User, Token, RefreshTokenRequest, RefreshTokenResponse, TokenRevokeRequest, TokenStatusResponse, GoogleOAuthRequest, GoogleOAuthResponse, SignupResponse, LoginResponse
+from app.services.email_verification_service import email_verification_service
 from app.config import settings
 from app.services.role_service import RoleService
 from app.services.google_oauth_service import GoogleOAuthService
@@ -16,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
-@router.post("/signup", response_model=User, status_code=status.HTTP_201_CREATED)
-def signup(user: UserCreate, db: Session = Depends(get_db)):
+@router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
+async def signup(user: UserCreate, db: Session = Depends(get_db)):
     """
     Create a new user account.
     
@@ -57,7 +58,31 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         logger.info(f"Creating new user: {user.email}")
         new_user = UserCRUD.create_user(db=db, user=user)
         logger.info(f"Successfully created user with ID: {new_user.id}")
-        return new_user
+        
+        # Send verification email (only for local auth, not Google OAuth)
+        verification_sent = False
+        if new_user.auth_provider == "local":
+            try:
+                success, message = await email_verification_service.send_verification_email(
+                    user=new_user, db=db
+                )
+                verification_sent = success
+                if success:
+                    logger.info(f"Verification email sent to {new_user.email}")
+                else:
+                    logger.warning(f"Failed to send verification email to {new_user.email}: {message}")
+            except Exception as e:
+                logger.error(f"Error sending verification email: {e}")
+                verification_sent = False
+        
+        return SignupResponse(
+            success=True,
+            message="User created successfully. Please check your email to verify your account." if verification_sent else "User created successfully.",
+            user_id=new_user.id,
+            email=new_user.email,
+            verification_sent=verification_sent,
+            verification_required=(new_user.auth_provider == "local")
+        )
     
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
@@ -81,7 +106,7 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
             detail="An unexpected error occurred. Please try again."
         )
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=LoginResponse)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """
     Authenticate user and return access token.
@@ -114,6 +139,27 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
                 detail="Inactive user"
             )
         
+        # Check if email is verified (only for local auth)
+        if user.auth_provider == "local" and not user.is_verified:
+            # Check if user can resend verification
+            can_resend = True
+            if user.last_verification_attempt:
+                from datetime import timezone
+                time_since_last = (datetime.now(timezone.utc) - user.last_verification_attempt).total_seconds()
+                if time_since_last < (5 * 60):  # 5 minutes cooldown
+                    can_resend = False
+            
+            return LoginResponse(
+                success=False,
+                message="Please verify your email before logging in. Check your email for a verification link.",
+                access_token=None,
+                refresh_token=None,
+                token_type=None,
+                user=None,
+                verification_required=True,
+                can_resend_verification=can_resend
+            )
+        
         # Create access token
         access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
         access_token = create_access_token(
@@ -129,23 +175,32 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
         privileges = await role_service.get_user_privileges(user.id)
         
         # Create user response with privileges
-        user_response = User(
-            id=user.id,
-            email=user.email,
-            username=user.username,
-            full_name=user.full_name,
-            role=user.role,
-            privileges=list(privileges),
-            is_active=user.is_active,
-            age=user.age,
-            country=user.country,
-            state=user.state,
-            city=user.city,
-            pincode=user.pincode,
-            created_at=user.created_at
-        )
+        user_response = {
+            "id": user.id,
+            "email": user.email,
+            "username": user.username,
+            "full_name": user.full_name,
+            "role": user.role,
+            "privileges": list(privileges),
+            "is_active": user.is_active,
+            "age": user.age,
+            "country": user.country,
+            "state": user.state,
+            "city": user.city,
+            "pincode": user.pincode,
+            "created_at": user.created_at
+        }
         
-        return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer", "user": user_response}
+        return LoginResponse(
+            success=True,
+            message="Login successful",
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            user=user_response,
+            verification_required=False,
+            can_resend_verification=False
+        )
     
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
