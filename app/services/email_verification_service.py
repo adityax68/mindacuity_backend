@@ -11,7 +11,6 @@ from sqlalchemy import and_
 
 from app.models import User
 from app.services.email_service import EmailService
-from app.services.email_utils import email_utils
 
 logger = logging.getLogger(__name__)
 
@@ -289,26 +288,12 @@ class EmailVerificationService:
             
             logger.info(f"Email verified successfully for user: {user.email}")
             
-            # Send welcome email after verification
-            await self._send_welcome_email_after_verification(user)
-            
             return True, "Email verified successfully! You can now login."
             
         except Exception as e:
             logger.error(f"Error verifying email: {e}")
             db.rollback()
             return False, "Internal error verifying email"
-    
-    async def _send_welcome_email_after_verification(self, user: User):
-        """Send welcome email after successful verification"""
-        try:
-            await email_utils.send_welcome_email(
-                user_email=user.email,
-                user_name=user.full_name or "User"
-            )
-            logger.info(f"Welcome email sent after verification to {user.email}")
-        except Exception as e:
-            logger.error(f"Error sending welcome email after verification: {e}")
     
     async def get_verification_status(self, email: str, db: Session) -> dict:
         """Get verification status for user"""
