@@ -99,6 +99,48 @@ class UserCRUD:
             db.commit()
             db.refresh(user)
         return user
+    
+    @staticmethod
+    def set_password_reset_token(db: Session, user: User, token: str, expires_at) -> User:
+        """Set password reset token for a user."""
+        from datetime import datetime, timezone
+        user.password_reset_token = token
+        user.password_reset_expires_at = expires_at
+        user.password_reset_attempts = (user.password_reset_attempts or 0) + 1
+        user.last_reset_attempt = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(user)
+        return user
+    
+    @staticmethod
+    def get_user_by_reset_token(db: Session, token: str) -> Optional[User]:
+        """Get user by password reset token."""
+        from datetime import datetime, timezone
+        user = db.query(User).filter(
+            User.password_reset_token == token,
+            User.password_reset_expires_at > datetime.now(timezone.utc)
+        ).first()
+        return user
+    
+    @staticmethod
+    def reset_user_password(db: Session, user: User, new_password: str) -> User:
+        """Reset user password and clear reset token."""
+        from app.auth import get_password_hash
+        user.hashed_password = get_password_hash(new_password)
+        user.password_reset_token = None
+        user.password_reset_expires_at = None
+        db.commit()
+        db.refresh(user)
+        return user
+    
+    @staticmethod
+    def clear_password_reset_token(db: Session, user: User) -> User:
+        """Clear password reset token."""
+        user.password_reset_token = None
+        user.password_reset_expires_at = None
+        db.commit()
+        db.refresh(user)
+        return user
 
 
 

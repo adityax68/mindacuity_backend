@@ -558,6 +558,58 @@ class LoginResponse(BaseModel):
             }
         }
 
+# Password Reset Schemas
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password request"""
+    email: EmailStr = Field(..., description="Email address to send password reset link")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "email": "user@example.com"
+            }
+        }
+
+class ForgotPasswordResponse(BaseModel):
+    """Schema for forgot password response"""
+    success: bool
+    message: str
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "message": "Password reset link has been sent to your email."
+            }
+        }
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for reset password request"""
+    token: str = Field(..., min_length=1, description="Password reset token")
+    new_password: str = Field(..., min_length=1, max_length=72, description="New password (1-72 characters)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "token": "abc123def456ghi789",
+                "new_password": "newSecurePassword123"
+            }
+        }
+
+class ResetPasswordResponse(BaseModel):
+    """Schema for reset password response"""
+    success: bool
+    message: str
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "message": "Password has been reset successfully. You can now login with your new password."
+            }
+        }
+
 # Email System Schemas
 
 from enum import Enum

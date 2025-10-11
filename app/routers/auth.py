@@ -6,7 +6,7 @@ from datetime import timedelta, datetime
 from app.database import get_db
 from app.auth import verify_password, create_access_token, create_refresh_token, store_refresh_token, verify_refresh_token, revoke_refresh_token, revoke_all_user_tokens, get_current_active_user, get_user_info
 from app.crud import UserCRUD
-from app.schemas import UserCreate, User, Token, RefreshTokenRequest, RefreshTokenResponse, TokenRevokeRequest, TokenStatusResponse, GoogleOAuthRequest, GoogleOAuthResponse, SignupResponse, LoginResponse
+from app.schemas import UserCreate, User, Token, RefreshTokenRequest, RefreshTokenResponse, TokenRevokeRequest, TokenStatusResponse, GoogleOAuthRequest, GoogleOAuthResponse, SignupResponse, LoginResponse, ForgotPasswordRequest, ForgotPasswordResponse, ResetPasswordRequest, ResetPasswordResponse
 from app.services.email_verification_service import email_verification_service
 from app.config import settings
 from app.services.role_service import RoleService
@@ -534,6 +534,156 @@ async def google_oauth(request: GoogleOAuthRequest, db: Session = Depends(get_db
         logger.error("=== GOOGLE OAUTH LOGIN FAILED (Unexpected Error) ===")
         logger.error(f"Unexpected error during Google OAuth: {e}")
         logger.error("Full traceback:", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again."
+        )
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+async def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Request password reset link.
+    
+    - **email**: User's email address
+    
+    Sends a password reset email with a unique token that expires in 1 hour.
+    """
+    try:
+        # Find user by email
+        user = UserCRUD.get_user_by_email(db, email=request.email)
+        
+        # For security reasons, always return success even if user doesn't exist
+        # This prevents email enumeration attacks
+        if not user:
+            logger.info(f"Password reset requested for non-existent email: {request.email}")
+            return ForgotPasswordResponse(
+                success=True,
+                message="If an account with that email exists, a password reset link has been sent."
+            )
+        
+        # Check if user is active
+        if not user.is_active:
+            logger.info(f"Password reset requested for inactive user: {request.email}")
+            return ForgotPasswordResponse(
+                success=True,
+                message="If an account with that email exists, a password reset link has been sent."
+            )
+        
+        # Check rate limiting - allow max 3 attempts per hour
+        if user.password_reset_attempts and user.password_reset_attempts >= 3:
+            if user.last_reset_attempt:
+                from datetime import timezone
+                time_since_last = (datetime.now(timezone.utc) - user.last_reset_attempt).total_seconds()
+                if time_since_last < 3600:  # 1 hour
+                    logger.warning(f"Too many password reset attempts for {request.email}")
+                    return ForgotPasswordResponse(
+                        success=False,
+                        message="Too many password reset attempts. Please try again later."
+                    )
+                else:
+                    # Reset counter after 1 hour
+                    user.password_reset_attempts = 0
+                    db.commit()
+        
+        # Generate reset token
+        import secrets
+        reset_token = secrets.token_urlsafe(32)
+        
+        # Set token expiration (1 hour from now)
+        from datetime import timezone
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        
+        # Save token to database
+        UserCRUD.set_password_reset_token(db, user, reset_token, expires_at)
+        
+        # Send password reset email
+        from app.services.email_utils import email_utils
+        try:
+            result = await email_utils.send_password_reset_email(
+                user_email=user.email,
+                reset_token=reset_token,
+                user_name=user.full_name or user.username or user.email,
+                db=db
+            )
+            
+            if result.get("status") == "success":
+                logger.info(f"Password reset email sent successfully to {user.email}")
+                return ForgotPasswordResponse(
+                    success=True,
+                    message="If an account with that email exists, a password reset link has been sent."
+                )
+            else:
+                logger.error(f"Failed to send password reset email to {user.email}: {result.get('error_message')}")
+                # Still return success to prevent email enumeration
+                return ForgotPasswordResponse(
+                    success=True,
+                    message="If an account with that email exists, a password reset link has been sent."
+                )
+        except Exception as email_error:
+            logger.error(f"Error sending password reset email: {email_error}")
+            # Still return success to prevent email enumeration
+            return ForgotPasswordResponse(
+                success=True,
+                message="If an account with that email exists, a password reset link has been sent."
+            )
+    
+    except Exception as e:
+        logger.error(f"Unexpected error during forgot password: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again."
+        )
+
+@router.post("/reset-password", response_model=ResetPasswordResponse)
+async def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Reset password using reset token.
+    
+    - **token**: Password reset token from email
+    - **new_password**: New password to set
+    
+    Validates the token and updates the user's password.
+    """
+    try:
+        # Find user by reset token
+        user = UserCRUD.get_user_by_reset_token(db, token=request.token)
+        
+        if not user:
+            logger.warning(f"Invalid or expired password reset token")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired password reset token. Please request a new password reset link."
+            )
+        
+        # Check if user is active
+        if not user.is_active:
+            logger.warning(f"Password reset attempted for inactive user: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Account is inactive. Please contact support."
+            )
+        
+        # Validate password length
+        if len(request.new_password) < 1 or len(request.new_password) > 72:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must be between 1 and 72 characters."
+            )
+        
+        # Reset the password
+        UserCRUD.reset_user_password(db, user, request.new_password)
+        
+        logger.info(f"Password reset successfully for user: {user.email}")
+        
+        return ResetPasswordResponse(
+            success=True,
+            message="Password has been reset successfully. You can now login with your new password."
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during password reset: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred. Please try again."

@@ -78,8 +78,9 @@ class EmailUtils:
     ) -> Dict[str, Any]:
         """Send password reset email"""
         try:
-            # In production, you'd use your actual domain
-            reset_url = f"https://yourdomain.com/reset-password?token={reset_token}"
+            # Get frontend URL from settings
+            from app.config import settings
+            reset_url = f"{settings.frontend_url}/reset-password?token={reset_token}"
             
             subject = "Reset Your Password - Health App"
             html_content = f"""
