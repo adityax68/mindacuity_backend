@@ -91,6 +91,43 @@ async def create_subscription(
             detail=f"Failed to create subscription: {str(e)}"
         )
 
+@router.get("/check-free-access")
+async def check_free_access(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Check if user already has a free access code (without generating new one)"""
+    try:
+        # Check if user already has free service
+        existing_free_service = db.query(UserFreeService).filter(
+            UserFreeService.user_id == current_user.id
+        ).first()
+        
+        if existing_free_service:
+            # Return existing access code
+            subscription = db.query(Subscription).filter(
+                Subscription.subscription_token == existing_free_service.subscription_token
+            ).first()
+            
+            return {
+                "has_code": True,
+                "access_code": subscription.access_code if subscription else None,
+                "plan_type": subscription.plan_type if subscription else None,
+                "message_limit": subscription.message_limit if subscription else None,
+                "generated_at": existing_free_service.generated_at
+            }
+        
+        return {
+            "has_code": False,
+            "access_code": None
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check free access: {str(e)}"
+        )
+
 @router.post("/generate-free-access")
 async def generate_free_access(
     current_user: User = Depends(get_current_active_user),
