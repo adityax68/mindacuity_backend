@@ -327,6 +327,20 @@ class ConversationUsage(Base):
     conversation = relationship("Conversation", back_populates="usage_records")
     subscription = relationship("Subscription", back_populates="usage_records")
 
+class UserFreeService(Base):
+    __tablename__ = "user_free_service"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False, index=True)
+    access_code = Column(String(20), nullable=False, index=True)
+    subscription_token = Column(String(255), nullable=False)
+    plan_type = Column(String(20), default="basic", nullable=False)
+    has_used = Column(Boolean, default=True, nullable=False)
+    generated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationship
+    user = relationship("User")
+
 class ChatAttachment(Base):
     __tablename__ = "chat_attachments"
     

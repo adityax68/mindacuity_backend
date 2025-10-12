@@ -304,21 +304,17 @@ class SubscriptionService:
                         logger.info(f"Re-linked orphaned usage to session {session_identifier} with {orphaned_usage.messages_used} messages used")
                         usage = orphaned_usage
                 
-                # If no usage found (either no orphaned records or not allowed to reuse), create fresh free plan
+                # If no usage found (either no orphaned records or not allowed to reuse), return none plan
                 if not usage:
-                    # For fresh sessions, always create a free subscription
-                    logger.info(f"No usage found for session {session_identifier}, creating fresh free subscription")
-                    free_subscription = self.create_free_subscription(db)
+                    # No automatic free subscription - user must generate access code
+                    logger.info(f"No usage found for session {session_identifier}, returning 'none' plan")
                     
-                    # Link session to free subscription (don't allow reuse for new subscriptions)
-                    self.link_session_to_subscription(db, session_identifier, free_subscription["subscription_token"], allow_reuse=False)
-                    
-                    # Return free subscription info
                     return {
-                        "can_send": True,
+                        "can_send": False,
                         "messages_used": 0,
-                        "message_limit": self.free_plan_limit,
-                        "plan_type": "free"
+                        "message_limit": 0,
+                        "plan_type": "none",
+                        "error": "No subscription found. Please use an access code to continue."
                     }
             
             # Get subscription details

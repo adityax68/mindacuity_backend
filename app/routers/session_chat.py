@@ -9,10 +9,13 @@ from app.schemas import (
     SubscriptionResponse,
     AccessCodeRequest,
     AccessCodeResponse,
-    SessionConversationResponse
+    SessionConversationResponse,
+    User
 )
 from app.services.session_chat_service import SessionChatService
 from app.services.subscription_service import SubscriptionService
+from app.auth import get_current_active_user
+from app.models import UserFreeService, Subscription
 
 router = APIRouter(prefix="/session-chat", tags=["Session Chat"])
 
@@ -62,10 +65,11 @@ async def send_message(
 @router.post("/subscribe", response_model=SubscriptionResponse)
 async def create_subscription(
     subscription_request: SubscriptionRequest,
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
     subscription_service: SubscriptionService = Depends(get_subscription_service)
 ):
-    """Create a new subscription (for testing)"""
+    """Create a new subscription (requires authentication)"""
     try:
         if subscription_request.plan_type == "free":
             result = subscription_service.create_free_subscription(db)
@@ -85,6 +89,67 @@ async def create_subscription(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create subscription: {str(e)}"
+        )
+
+@router.post("/generate-free-access")
+async def generate_free_access(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    subscription_service: SubscriptionService = Depends(get_subscription_service)
+):
+    """Generate one-time free basic access code for logged-in user"""
+    try:
+        # Check if user already used free service
+        existing_free_service = db.query(UserFreeService).filter(
+            UserFreeService.user_id == current_user.id
+        ).first()
+        
+        if existing_free_service:
+            # Return existing access code
+            subscription = db.query(Subscription).filter(
+                Subscription.subscription_token == existing_free_service.subscription_token
+            ).first()
+            
+            return {
+                "success": True,
+                "already_generated": True,
+                "message": "You already have a free access code",
+                "access_code": subscription.access_code,
+                "plan_type": subscription.plan_type,
+                "message_limit": subscription.message_limit,
+                "generated_at": existing_free_service.generated_at
+            }
+        
+        # Create new basic subscription (using existing service method)
+        result = subscription_service.create_basic_subscription(db)
+        
+        # Save to free service table
+        free_service = UserFreeService(
+            user_id=current_user.id,
+            access_code=result["access_code"],
+            subscription_token=result["subscription_token"],
+            plan_type="basic",
+            has_used=True
+        )
+        db.add(free_service)
+        db.commit()
+        db.refresh(free_service)
+        
+        return {
+            "success": True,
+            "already_generated": False,
+            "message": "Free access code generated successfully",
+            "access_code": result["access_code"],
+            "plan_type": result["plan_type"],
+            "message_limit": result["message_limit"],
+            "generated_at": free_service.generated_at
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate free access: {str(e)}"
         )
 
 @router.post("/access-code", response_model=AccessCodeResponse)
