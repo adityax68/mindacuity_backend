@@ -300,7 +300,7 @@ DO NOT:
         try:
             # Create the base chat model
             self.chat_model = ChatOpenAI(
-                model="gpt-3.5-turbo",
+                model="gpt-5",
                 temperature=0.7,
                 max_tokens=500,
                 api_key=settings.openai_api_key
