@@ -24,19 +24,26 @@ logger = logging.getLogger(__name__)
 
 class SessionChatService:
     def __init__(self):
-        # Initialize OpenAI client for chat 
-        api_key = settings.openai_api_key
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is required")
-        
-        self.client = OpenAI(api_key=api_key, timeout=30.0)  # 30 second timeout
-        
-        # No encryption needed for session-based chats
-        
-        # Initialize subscription service
+        # Initialize subscription service (UNCHANGED)
         self.subscription_service = SubscriptionService()
         
-        # Enhanced system prompt for Acutie - Diagnostic Assessment Mode
+        # NEW: Initialize intelligent conversation orchestrator
+        try:
+            from app.services.intelligence.orchestrator import ConversationOrchestrator
+            self.orchestrator = ConversationOrchestrator()
+            self.use_new_system = True
+            logger.info("Initialized with NEW intelligent orchestration system")
+        except Exception as e:
+            logger.error(f"Failed to initialize orchestrator, falling back to old system: {e}")
+            self.use_new_system = False
+            # Fallback: Keep old system
+            api_key = settings.openai_api_key
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY environment variable is required")
+            
+            self.client = OpenAI(api_key=api_key, timeout=30.0)
+        
+        # Keep old prompt for fallback
         self.system_prompt = """You are Acutie, a mental health diagnostic assessment AI focused EXCLUSIVELY on evaluating mental health conditions through structured clinical questioning.
 
 YOUR PRIMARY ROLE:
@@ -292,8 +299,9 @@ DO NOT:
 - Say "Thank you" before every question
 - Introduce yourself again after the first message"""
 
-        # Initialize LangChain components
-        self._setup_langchain_components()
+        # Initialize LangChain components (only if using old system)
+        if not self.use_new_system:
+            self._setup_langchain_components()
 
     def _setup_langchain_components(self):
         """Setup LangChain components for chat processing."""
@@ -331,7 +339,7 @@ DO NOT:
     async def process_chat_message(self, db: Session, session_identifier: str, chat_request: SessionChatMessageRequest) -> SessionChatResponse:
         """Process a chat message and return AI response"""
         try:
-            # Check usage limit (don't allow orphaned reuse for new sessions - always create fresh free plan)
+            # UNCHANGED: Check usage limit
             usage_info = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=False)
             
             if not usage_info["can_send"]:
@@ -354,40 +362,37 @@ DO NOT:
                         plan_type=usage_info["plan_type"]
                     )
             
-            # Create or get conversation
+            # UNCHANGED: Create or get conversation
             conversation = self.subscription_service.create_or_get_conversation(db, session_identifier)
             
-            # Get message history store for this session
-            history_store = self._get_message_history_store(db)
-            
-            # Create the runnable with message history
-            runnable_with_history = RunnableWithMessageHistory(
-                self.chain,
-                lambda session_id: history_store.get_chat_history(session_id),
-                input_messages_key="input",
-                history_messages_key="chat_history"
-            )
-            
-            # Get AI response using LangChain (this handles context and message saving automatically)
+            # NEW: Use intelligent orchestrator OR old system
             try:
-                response = await runnable_with_history.ainvoke(
-                    {"input": chat_request.message},
-                    config={"configurable": {"session_id": session_identifier}}
-                )
-                
-                ai_message_content = response.content
+                if self.use_new_system:
+                    # NEW SYSTEM: Process with intelligent orchestrator
+                    logger.info("Using NEW intelligent orchestration system")
+                    ai_message_content = await self.orchestrator.process_message(
+                        session_id=session_identifier,
+                        user_message=chat_request.message,
+                        db=db
+                    )
+                else:
+                    # OLD SYSTEM: Fallback
+                    ai_message_content = await self._process_with_old_system(
+                        db, session_identifier, chat_request
+                    )
                 
             except Exception as ai_error:
-                logger.error(f"LangChain/OpenAI API error: {ai_error}")
+                logger.error(f"AI processing error: {ai_error}", exc_info=True)
                 # Fallback response if AI service fails
                 ai_message_content = "I'm sorry, I'm having trouble processing your message right now. Please try again in a moment."
             
-            # Only increment usage counter AFTER successful AI response
+            # UNCHANGED: Increment usage counter AFTER successful AI response
             self.subscription_service.increment_usage(db, session_identifier)
             
-            # Get updated usage info
+            # UNCHANGED: Get updated usage info
             updated_usage = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=False)
             
+            # UNCHANGED: Return response in same format
             return SessionChatResponse(
                 message=ai_message_content,
                 conversation_id=session_identifier,
@@ -398,25 +403,44 @@ DO NOT:
             )
             
         except Exception as e:
-            logger.error(f"Failed to process chat message: {e}")
+            logger.error(f"Failed to process chat message: {e}", exc_info=True)
             
-            # CRITICAL: Rollback the transaction to prevent invalid transaction state
+            # UNCHANGED: Rollback transaction
             try:
                 db.rollback()
             except Exception as rollback_error:
                 logger.error(f"Failed to rollback transaction: {rollback_error}")
             
-            # Get current usage info without incrementing (since we failed)
+            # UNCHANGED: Get current usage info
             current_usage = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=False)
             
+            # UNCHANGED: Return error response
             return SessionChatResponse(
                 message="I'm sorry, I encountered an error. Please try again.",
                 conversation_id=session_identifier,
-                requires_subscription=False,  # Don't require subscription on error
+                requires_subscription=False,
                 messages_used=current_usage.get("messages_used", 0),
                 message_limit=current_usage.get("message_limit", None),
                 plan_type=current_usage.get("plan_type", "free")
             )
+    
+    async def _process_with_old_system(self, db: Session, session_identifier: str, chat_request: SessionChatMessageRequest) -> str:
+        """OLD SYSTEM: Fallback to original LangChain processing"""
+        history_store = self._get_message_history_store(db)
+        
+        runnable_with_history = RunnableWithMessageHistory(
+            self.chain,
+            lambda session_id: history_store.get_chat_history(session_id),
+            input_messages_key="input",
+            history_messages_key="chat_history"
+        )
+        
+        response = await runnable_with_history.ainvoke(
+            {"input": chat_request.message},
+            config={"configurable": {"session_id": session_identifier}}
+        )
+        
+        return response.content
 
     def get_conversation_messages(self, db: Session, session_identifier: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Get conversation messages for a session using LangChain history"""
