@@ -542,10 +542,31 @@ This preliminary assessment is not a substitute for professional diagnosis and c
         session_identifier: str,
         limit: int = 50
     ) -> list:
-        """Get conversation messages from Redis/DB"""
+        """Get conversation messages from Redis/DB with proper format"""
         try:
             message_store = OptimizedMessageHistoryStore(db)
-            return message_store.get_messages(session_identifier, limit=limit)
+            messages = message_store.get_messages(session_identifier, limit=limit)
+            
+            # Add id field and convert created_at to datetime for API response
+            formatted_messages = []
+            for idx, msg in enumerate(messages):
+                formatted_msg = {
+                    "id": idx + 1,  # Sequential ID for API
+                    "role": msg.get("role", "assistant"),
+                    "content": msg.get("content", ""),
+                    "created_at": msg.get("created_at", datetime.utcnow().isoformat())
+                }
+                # Convert ISO string to datetime if needed
+                if isinstance(formatted_msg["created_at"], str):
+                    try:
+                        formatted_msg["created_at"] = datetime.fromisoformat(formatted_msg["created_at"])
+                    except:
+                        formatted_msg["created_at"] = datetime.utcnow()
+                
+                formatted_messages.append(formatted_msg)
+            
+            return formatted_messages
+            
         except Exception as e:
             logger.error(f"Error getting conversation messages: {e}")
             try:
