@@ -8,7 +8,8 @@ import json
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
-import anthropic
+import asyncio
+from anthropic import AsyncAnthropic  # FIXED: Use async client!
 
 from app.config import settings
 from app.services.prompts import prompt_manager
@@ -27,15 +28,18 @@ class OrchestratorAgent:
     """
     
     MODEL_NAME = "claude-sonnet-4-5-20250929"
-    MAX_TOKENS = 500
-    TEMPERATURE = 0.7
+    MAX_TOKENS = 300  # Reduced for faster response (classification + brief empathy)
+    TEMPERATURE = 0.6  # Lower for more consistent output
     
     def __init__(self):
-        """Initialize Anthropic client"""
+        """Initialize Anthropic ASYNC client"""
         if not settings.anthropic_api_key:
             raise ValueError("ANTHROPIC_API_KEY not configured")
         
-        self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        self.client = AsyncAnthropic(  # FIXED: Use async client!
+            api_key=settings.anthropic_api_key,
+            timeout=30.0  # 30 second timeout
+        )
         self.system_prompt = prompt_manager.ORCHESTRATOR_SYSTEM_PROMPT
     
     async def classify_and_respond(
@@ -77,9 +81,12 @@ class OrchestratorAgent:
             
             start_time = datetime.utcnow()
             
-            # Make API call with error handling
+            # Make ASYNC API call with error handling
             async def api_call():
-                response = self.client.messages.create(
+                logger.info(f"[PERF] Starting Orchestrator API call for session {session_id}")
+                api_start = datetime.utcnow()
+                
+                response = await self.client.messages.create(  # FIXED: Added await!
                     model=self.MODEL_NAME,
                     max_tokens=self.MAX_TOKENS,
                     temperature=self.TEMPERATURE,
@@ -88,6 +95,9 @@ class OrchestratorAgent:
                         {"role": "user", "content": user_prompt}
                     ]
                 )
+                
+                api_duration = (datetime.utcnow() - api_start).total_seconds()
+                logger.info(f"[PERF] Orchestrator API call completed in {api_duration:.2f}s for session {session_id}")
                 return response
             
             result = await error_handler.call_with_retry(

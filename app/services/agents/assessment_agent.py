@@ -31,7 +31,10 @@ class AssessmentAgent:
         if not settings.openai_api_key:
             raise ValueError("OPENAI_API_KEY not configured")
         
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            timeout=30.0  # 30 second timeout
+        )
         self.system_prompt = prompt_manager.ASSESSMENT_SYSTEM_PROMPT
     
     async def generate_assessment(

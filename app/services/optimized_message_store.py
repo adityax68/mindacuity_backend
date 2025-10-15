@@ -7,6 +7,7 @@ import asyncio
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy.orm import Session
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
@@ -15,6 +16,9 @@ from app.models import Message
 from app.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
+
+# Shared thread pool for DB writes (non-blocking)
+_db_write_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="db_write")
 
 
 class OptimizedMessageHistoryStore:
@@ -143,8 +147,13 @@ class OptimizedMessageHistoryStore:
             # Set/refresh expiry
             self.redis.expire(cache_key, self.CONTEXT_TTL)
             
-            # Write to PostgreSQL asynchronously (non-blocking)
-            asyncio.create_task(self._save_to_db_async(session_id, role, content))
+            # Write to PostgreSQL in thread pool (truly non-blocking)
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                _db_write_executor,
+                self._save_to_db_sync,
+                session_id, role, content
+            )
             
             logger.debug(f"Added {role} message to session {session_id}")
             return True
@@ -153,9 +162,9 @@ class OptimizedMessageHistoryStore:
             logger.error(f"Error adding message for session {session_id}: {e}")
             return False
     
-    async def _save_to_db_async(self, session_id: str, role: str, content: str):
+    def _save_to_db_sync(self, session_id: str, role: str, content: str):
         """
-        Async database write (doesn't block response)
+        Synchronous database write (runs in thread pool, doesn't block event loop)
         """
         try:
             message = Message(
@@ -166,7 +175,7 @@ class OptimizedMessageHistoryStore:
             )
             self.db.add(message)
             self.db.commit()
-            logger.debug(f"Saved {role} message to DB for session {session_id}")
+            logger.debug(f"[PERF] DB write completed for session {session_id}")
             
         except Exception as e:
             logger.error(f"Failed to save message to DB for session {session_id}: {e}")

@@ -64,11 +64,18 @@ class OptimizedSessionChatService:
         
         Total: 2 API calls for normal flow
         """
+        from datetime import datetime
+        
+        request_start = datetime.utcnow()
+        logger.info(f"[PERF] === Starting request for session {session_identifier} ===")
+        
         try:
             # 1. Check usage limit
+            step_start = datetime.utcnow()
             usage_info = self.subscription_service.check_usage_limit(
                 db, session_identifier, allow_orphaned_reuse=False
             )
+            logger.info(f"[PERF] Usage check took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
             
             if not usage_info["can_send"]:
                 return self._create_subscription_required_response(
@@ -87,22 +94,39 @@ class OptimizedSessionChatService:
                 )
             
             # 3. Get conversation context
+            step_start = datetime.utcnow()
             conversation = self.subscription_service.create_or_get_conversation(db, session_identifier)
+            logger.info(f"[PERF] DB conversation lookup took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
+            
+            step_start = datetime.utcnow()
             message_store = OptimizedMessageHistoryStore(db)
             state = self.state_manager.get_state(session_identifier)
             
             # Get recent context from Redis (fast!)
             context = message_store.get_context_for_llm(session_identifier, max_messages=6)
-            state_summary = self.state_manager.get_state_summary(session_identifier)
+            
+            # Build state summary from existing state (no extra Redis call!)
+            state_summary = {
+                "phase": state.phase,
+                "questions_asked": state.questions_asked,
+                "dimensions_answered": len(state.dimensions_answered),
+                "condition_hypothesis": state.condition_hypothesis,
+                "risk_level": state.risk_level,
+                "has_demographics": bool(state.demographics)
+            }
+            logger.info(f"[PERF] Redis state/context fetch took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
             
             # 4. ORCHESTRATOR CALL (API Call #1)
             # Classifies intent, detects emotion, checks crisis, generates empathy
+            step_start = datetime.utcnow()
+            logger.info(f"[PERF] Calling Orchestrator agent...")
             orchestrator_result = await orchestrator_agent.classify_and_respond(
                 user_message=chat_request.message,
                 session_id=session_identifier,
                 conversation_context=context,
                 state_summary=state_summary
             )
+            logger.info(f"[PERF] Orchestrator TOTAL (including retries) took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
             
             if not orchestrator_result["success"]:
                 return self._create_error_response(
@@ -144,31 +168,29 @@ class OptimizedSessionChatService:
                     session_identifier, redirect_message, usage_info
                 )
             
-            # 6. Update state with orchestrator insights
+            # 6. Update state with orchestrator insights (BATCHED for performance)
+            state_updates = {}
             if classification["condition_hypothesis"]:
-                self.state_manager.set_condition_hypothesis(
-                    session_identifier,
-                    classification["condition_hypothesis"]
-                )
+                state_updates["condition_hypothesis"] = classification["condition_hypothesis"]
             
             if classification["sentiment"]:
-                self.state_manager.set_sentiment(
-                    session_identifier,
-                    classification["sentiment"]
-                )
+                state_updates["sentiment"] = classification["sentiment"]
             
             if classification["risk_level"]:
-                self.state_manager.set_risk_level(
-                    session_identifier,
-                    classification["risk_level"]
-                )
+                state_updates["risk_level"] = classification["risk_level"]
+            
+            # Single Redis get+save instead of 3 separate cycles!
+            if state_updates:
+                step_start = datetime.utcnow()
+                self.state_manager.update_state(session_identifier, state_updates)
+                logger.info(f"[PERF] Batched state update took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
             
             # 7. Route to appropriate specialist based on phase and progress
             
             # Check if this is first message
             if state.phase == "initial" and state.questions_asked == 0:
-                # First interaction - use greeting + empathy
-                response_message = self._build_initial_response(classification)
+                # First interaction - just use greeting (orchestrator empathy might be redundant)
+                response_message = prompt_manager.INITIAL_GREETING
                 message_store.add_assistant_message(session_identifier, response_message)
                 self.state_manager.set_phase(session_identifier, "gathering")
                 
@@ -264,6 +286,8 @@ class OptimizedSessionChatService:
             next_dimension = assessment_trigger.get_next_dimension_needed(session_identifier)
             condition = state.condition_hypothesis[0] if state.condition_hypothesis else "general"
             
+            step_start = datetime.utcnow()
+            logger.info(f"[PERF] Calling Diagnostic agent for dimension: {next_dimension}...")
             question_result = await diagnostic_agent.generate_question(
                 session_id=session_identifier,
                 condition=condition,
@@ -274,6 +298,7 @@ class OptimizedSessionChatService:
                     "answers_collected": state.answers_collected
                 }
             )
+            logger.info(f"[PERF] Diagnostic agent took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
             
             if question_result["success"]:
                 response_message = self._build_response_with_empathy(
@@ -288,16 +313,26 @@ class OptimizedSessionChatService:
                 )
             
             # Save assistant response
+            step_start = datetime.utcnow()
             message_store.add_assistant_message(session_identifier, response_message)
+            logger.info(f"[PERF] Save assistant message took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
             
-            # 9. Increment usage and return
+            # 9. Increment usage and return (cached, no extra DB query)
+            step_start = datetime.utcnow()
             self.subscription_service.increment_usage(db, session_identifier)
-            updated_usage = self.subscription_service.check_usage_limit(
-                db, session_identifier, allow_orphaned_reuse=False
-            )
+            
+            # Update usage info locally (no DB query needed!)
+            usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
+            if usage_info.get("message_limit"):
+                usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
+            
+            logger.info(f"[PERF] DB usage increment took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
+            
+            total_duration = (datetime.utcnow() - request_start).total_seconds()
+            logger.info(f"[PERF] === REQUEST COMPLETED in {total_duration:.3f}s for session {session_identifier} ===")
             
             return self._create_success_response(
-                session_identifier, response_message, updated_usage
+                session_identifier, response_message, usage_info
             )
             
         except Exception as e:
