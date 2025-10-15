@@ -82,48 +82,59 @@ Be empathetic but clinical. Focus on assessment, not therapy."""
     
     # ==================== DIAGNOSTIC AGENT PROMPTS ====================
     
-    DIAGNOSTIC_SYSTEM_PROMPT = """You are a clinical diagnostic interviewer for mental health assessment.
+    DIAGNOSTIC_SYSTEM_PROMPT = """You are an expert clinical psychologist conducting a diagnostic mental health assessment.
 
-Your role: Generate ONE specific diagnostic question based on the user's condition and what information is still needed.
+**YOUR ROLE:**
+Generate ONE intelligent question that helps diagnose or understand the user's mental health condition.
 
-IMPORTANT RULES:
-1. Ask ONLY ONE question per response
-2. Make questions natural and conversational
-3. DO NOT use labels like "Duration:" or "Frequency:"
-4. DO NOT say "Next question" or "Moving on"
-5. Keep questions clear and direct
-6. Adapt to their specific symptoms
+**QUESTION TYPES:**
+1. **GENERAL QUESTIONS** (condition-agnostic): Ask about duration, frequency, intensity, triggers, physical symptoms, impact, coping, support
+2. **SYMPTOM-SPECIFIC QUESTIONS** (use clinical knowledge): Probe DSM-5/ICD-11 diagnostic criteria specific to the suspected condition
 
-DIAGNOSTIC DIMENSIONS TO EXPLORE:
-1. Duration - How long symptoms have lasted
-2. Frequency - How often they occur
-3. Intensity - Severity level (1-10 scale)
-4. Triggers - What makes it worse
-5. Daily Impact - Effect on work, relationships, sleep, appetite
-6. Physical Symptoms - Bodily manifestations
-7. Coping Mechanisms - What they've tried
-8. Support System - Who they can talk to
+**USE YOUR CLINICAL EXPERTISE:**
+Leverage your knowledge of mental health conditions to ask intelligent, diagnostic questions about KEY SYMPTOMS:
 
-QUESTION EXAMPLES:
+**For ANXIETY:**
+- Excessive worry/rumination patterns
+- Avoidance behaviors
+- Panic attacks or sudden fear episodes
+- Restlessness or feeling on edge
+- Concentration difficulties
+- Sleep disturbances from worry
 
-For ANXIETY:
-- "How long have you been feeling anxious?"
-- "On a scale of 1 to 10, how intense is your anxiety?"
-- "What situations tend to trigger these anxious feelings?"
-- "Are you experiencing any physical symptoms like rapid heartbeat or tension?"
+**For DEPRESSION:**
+- Anhedonia (loss of interest/pleasure)
+- Feelings of worthlessness or guilt
+- Motivation changes
+- Suicidal thoughts (assess carefully)
+- Psychomotor changes (agitation/retardation)
+- Cognitive symptoms (concentration, decision-making)
 
-For DEPRESSION:
-- "How long have you been feeling this way?"
-- "How often do you experience these feelings? Daily, or more occasionally?"
-- "Have you noticed changes in your sleep or appetite?"
-- "Are you still able to enjoy activities you used to like?"
+**For ANGER/IRRITABILITY:**
+- Rumination on anger-provoking situations
+- Regret after outbursts
+- Withdrawal from relationships
+- Physical aggression or destruction of property
+- Frequency of conflicts
 
-For STRESS:
-- "What's been the main source of your stress?"
-- "How is this stress affecting your daily life?"
-- "Have you noticed any physical symptoms like headaches or fatigue?"
+**For STRESS:**
+- Feeling overwhelmed by responsibilities
+- Decision-making difficulties
+- Mood instability/irritability
+- Burnout symptoms
+- Work-life balance issues
 
-Generate ONE question that will help complete the diagnostic picture."""
+**For OTHER CONDITIONS:**
+Use your psychological knowledge to identify relevant diagnostic criteria and ask targeted questions.
+
+**GUIDELINES:**
+- Ask ONLY ONE clear, empathetic question
+- Use natural, conversational language (NOT clinical jargon)
+- Target SPECIFIC symptoms that confirm or rule out diagnoses
+- Be sensitive and non-judgmental
+- NO labels, NO formatting—just the question
+
+**OUTPUT:** One question only."""
     
     @staticmethod
     def get_diagnostic_prompt(condition: str, dimension_needed: str, context: str) -> str:
@@ -306,49 +317,86 @@ If you're not in immediate danger but need to talk, I'm here. But please know th
     
     # ==================== CONDITION-SPECIFIC QUESTION TEMPLATES ====================
     
-    CONDITION_QUESTIONS = {
-        "anxiety": {
-            "duration": "How long have you been experiencing these anxious feelings? Days, weeks, or months?",
-            "frequency": "How often do you feel anxious? Daily, several times a week, or occasionally?",
-            "intensity": "On a scale of 1 to 10, how intense is your anxiety? 1 being barely noticeable and 10 being overwhelming.",
-            "triggers": "What situations or events tend to trigger your anxiety?",
-            "physical": "Are you experiencing any physical symptoms like rapid heartbeat, sweating, or muscle tension?",
-            "worry": "Do you find it difficult to control your worrying thoughts?",
-            "impact": "How is this anxiety affecting your daily activities like work, relationships, or sleep?"
-        },
-        "depression": {
-            "duration": "How long have you been feeling this way? Days, weeks, or months?",
-            "frequency": "How often do you experience these feelings? Daily, several times a week, or occasionally?",
-            "intensity": "On a scale of 1 to 10, how intense are these feelings?",
-            "mood": "Have you lost interest in activities you used to enjoy?",
-            "sleep": "How has your sleep been affected? Trouble falling asleep, staying asleep, or sleeping too much?",
-            "energy": "How would you describe your energy levels lately?",
-            "impact": "How are these feelings affecting your daily life, work, or relationships?"
-        },
-        "stress": {
-            "duration": "How long have you been feeling stressed?",
-            "frequency": "How often do you feel overwhelmed by stress?",
-            "intensity": "On a scale of 1 to 10, how would you rate your stress level?",
-            "source": "What's the main source of your stress?",
-            "physical": "Are you experiencing any physical symptoms like headaches, fatigue, or muscle tension?",
-            "coping": "How are you currently managing your stress?",
-            "impact": "How is this stress affecting your work, relationships, or daily activities?"
-        }
+    # ==================== GENERAL DIAGNOSTIC QUESTIONS ====================
+    # These questions are condition-agnostic and asked to ALL users (randomized order)
+    # LLM will generate 5 additional condition-specific symptom questions
+    
+    GENERAL_QUESTIONS = [
+        "How long have you been experiencing these feelings?",
+        "How often do you experience these feelings?",
+        "On a scale of 1 to 10, how intense are these feelings?",
+        "What situations or events tend to trigger these feelings?",
+        "Are you experiencing any physical symptoms?",
+        "How are these feelings affecting your daily life?",
+        "How are you currently managing these feelings?",
+        "Do you have support from friends or family?",
+    ]
+    
+    # Map dimensions to general questions
+    DIMENSION_TO_GENERAL_QUESTION = {
+        "duration": "How long have you been experiencing these feelings?",
+        "frequency": "How often do you experience these feelings?",
+        "intensity": "On a scale of 1 to 10, how intense are these feelings?",
+        "triggers": "What situations or events tend to trigger these feelings?",
+        "physical": "Are you experiencing any physical symptoms?",
+        "impact": "How are these feelings affecting your daily life?",
+        "coping": "How are you currently managing these feelings?",
+        "support": "Do you have support from friends or family?",
     }
     
     @classmethod
-    def get_condition_question(cls, condition: str, dimension: str) -> Optional[str]:
+    def get_general_question(cls, dimension: str) -> Optional[str]:
         """
-        Get a pre-written question for a specific condition and dimension
+        Get a general question for a specific dimension
+        These are condition-agnostic questions asked to all users
         
         Args:
-            condition: anxiety, depression, or stress
-            dimension: duration, frequency, intensity, etc.
+            dimension: duration, frequency, intensity, triggers, physical, impact, coping, support
             
         Returns:
             Question string or None if not found
         """
-        return cls.CONDITION_QUESTIONS.get(condition, {}).get(dimension)
+        return cls.DIMENSION_TO_GENERAL_QUESTION.get(dimension)
+    
+    @classmethod
+    def get_random_general_question(cls, exclude: list = None) -> Optional[str]:
+        """
+        Get a random general question that hasn't been asked yet
+        
+        Args:
+            exclude: List of questions already asked
+            
+        Returns:
+            Random question from GENERAL_QUESTIONS
+        """
+        import random
+        
+        available = [q for q in cls.GENERAL_QUESTIONS if q not in (exclude or [])]
+        
+        if not available:
+            return None
+        
+        return random.choice(available)
+    
+    @classmethod
+    def get_condition_question(cls, condition: str, dimension: str) -> Optional[str]:
+        """
+        DEPRECATED: Returns general questions only now.
+        For condition-specific symptom questions, the LLM will generate them dynamically.
+        
+        Args:
+            condition: The condition being assessed (used for LLM context, not hardcoded questions)
+            dimension: duration, frequency, intensity, etc.
+            
+        Returns:
+            General question for the dimension, or None (letting LLM generate)
+        """
+        # Return general question if it's a standard dimension
+        if dimension in cls.DIMENSION_TO_GENERAL_QUESTION:
+            return cls.DIMENSION_TO_GENERAL_QUESTION[dimension]
+        
+        # For non-standard dimensions, return None so LLM generates the question
+        return None
     
     @classmethod
     def get_off_topic_response(cls, intent: str) -> str:

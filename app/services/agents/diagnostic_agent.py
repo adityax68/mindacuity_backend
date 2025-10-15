@@ -172,10 +172,27 @@ class DiagnosticAgent:
             )
             
             # Extract question
-            question = response.choices[0].message.content.strip()
+            raw_question = response.choices[0].message.content
+            logger.info(f"[DEBUG] GPT-5 raw response: '{raw_question}'")
+            
+            question = raw_question.strip() if raw_question else ""
+            logger.info(f"[DEBUG] After strip: '{question}'")
             
             # Clean up common artifacts
             question = self._clean_question(question)
+            logger.info(f"[DEBUG] After cleaning: '{question}'")
+            
+            # Safety check: If question is empty or just "?", use fallback
+            if not question or question == "?" or len(question) < 5:
+                logger.warning(f"GPT-5 returned invalid question: '{question}', using fallback")
+                fallback = prompt_manager.get_condition_question(condition, dimension_needed)
+                if fallback:
+                    return {
+                        "success": True,
+                        "question": fallback,
+                        "dimension": dimension_needed,
+                        "source": "fallback_invalid_response"
+                    }
             
             return {
                 "success": True,
