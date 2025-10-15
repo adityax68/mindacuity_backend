@@ -331,8 +331,8 @@ class OptimizedSessionChatService:
             # Track the answer
             if classification["intent"] == "answering_question":
                 # Extract dimension from last question context
-                last_message = message_store.get_last_message(session_identifier)
-                if last_message and last_message["role"] == "assistant":
+                last_assistant_message = message_store.get_last_assistant_message(session_identifier)
+                if last_assistant_message:
                     # Infer dimension from previous question
                     dimension = self._infer_dimension_from_context(state)
                     if dimension:
@@ -449,13 +449,15 @@ class OptimizedSessionChatService:
     
     def _is_demographic_response(self, message_store, session_id: str, state) -> bool:
         """Check if user is responding to a demographic question"""
-        # Get the last assistant message to see what was asked
-        last_message = message_store.get_last_message(session_id)
+        # Get the last ASSISTANT message to see what was asked
+        # (Not just last message, which could be the user's message we just added!)
+        last_assistant_message = message_store.get_last_assistant_message(session_id)
         
-        if not last_message or last_message["role"] != "assistant":
+        if not last_assistant_message:
             return False
         
-        last_content = last_message["content"].lower()
+        last_content = last_assistant_message["content"].lower()
+        logger.info(f"[DEBUG] Last assistant message: '{last_content[:100]}...'")
         
         # Check if last message was asking for demographics (all at once)
         demographic_indicators = [

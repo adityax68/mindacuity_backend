@@ -259,6 +259,40 @@ class OptimizedMessageHistoryStore:
             logger.error(f"Error getting last message for session {session_id}: {e}")
             return None
     
+    def get_last_assistant_message(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the most recent ASSISTANT message (for checking what was last asked)
+        """
+        try:
+            cache_key = f"context:{session_id}"
+            
+            # Get recent messages from Redis
+            messages = self.redis.lrange(cache_key, 0, 10, deserialize=True)  # Check last 10
+            if messages:
+                # Find first assistant message
+                for msg in messages:
+                    if msg.get("role") == "assistant":
+                        return msg
+            
+            # Fallback to DB
+            db_message = self.db.query(Message).filter(
+                Message.session_identifier == session_id,
+                Message.role == "assistant"
+            ).order_by(Message.created_at.desc()).first()
+            
+            if db_message:
+                return {
+                    "role": db_message.role,
+                    "content": db_message.content,
+                    "created_at": db_message.created_at.isoformat() if db_message.created_at else None
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting last assistant message for session {session_id}: {e}")
+            return None
+    
     def clear_messages(self, session_id: str) -> bool:
         """
         Clear all messages for a session (Redis only, DB persists)
