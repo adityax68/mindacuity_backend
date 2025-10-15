@@ -24,7 +24,7 @@ class DiagnosticAgent:
     
     MODEL_NAME = "gpt-5"
     MAX_TOKENS = 150
-    TEMPERATURE = 0.7
+    TEMPERATURE = 1.0  # GPT-5 only supports default temperature of 1.0
     
     def __init__(self):
         """Initialize OpenAI client"""

@@ -24,7 +24,7 @@ class AssessmentAgent:
     
     MODEL_NAME = "gpt-5"
     MAX_TOKENS = 1000  # Longer for comprehensive reports
-    TEMPERATURE = 0.6   # Lower temperature for consistent clinical output
+    TEMPERATURE = 1.0  # GPT-5 only supports default temperature of 1.0
     
     def __init__(self):
         """Initialize OpenAI client"""
@@ -232,7 +232,7 @@ Provide a compassionate, clear summary for the user."""
                 response = await self.client.chat.completions.create(
                     model=self.MODEL_NAME,
                     max_completion_tokens=150,  # GPT-5 uses max_completion_tokens
-                    temperature=0.7,
+                    temperature=1.0,  # GPT-5 only supports default temperature of 1.0
                     messages=[
                         {"role": "user", "content": prompt}
                     ]
