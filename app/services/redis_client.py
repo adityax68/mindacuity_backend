@@ -28,18 +28,27 @@ class RedisClient:
     def _initialize_pool(self):
         """Initialize Redis connection pool"""
         try:
-            self._pool = redis.ConnectionPool(
-                host=settings.redis_host,
-                port=settings.redis_port,
-                password=settings.redis_password,
-                db=settings.redis_db,
-                ssl=settings.redis_ssl,
-                decode_responses=True,
-                max_connections=50,
-                socket_timeout=5,
-                socket_connect_timeout=5,
-                retry_on_timeout=True
-            )
+            # Build connection pool kwargs
+            pool_kwargs = {
+                "host": settings.redis_host,
+                "port": settings.redis_port,
+                "db": settings.redis_db,
+                "decode_responses": True,
+                "max_connections": 50,
+                "socket_timeout": 5,
+                "socket_connect_timeout": 5,
+                "retry_on_timeout": True
+            }
+            
+            # Add password if provided
+            if settings.redis_password:
+                pool_kwargs["password"] = settings.redis_password
+            
+            # Handle SSL configuration (for redis-py 5.x compatibility)
+            if settings.redis_ssl:
+                pool_kwargs["connection_class"] = redis.SSLConnection
+            
+            self._pool = redis.ConnectionPool(**pool_kwargs)
             
             # Test connection
             client = redis.Redis(connection_pool=self._pool)
