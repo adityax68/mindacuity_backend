@@ -176,10 +176,12 @@ class OptimizedSessionChatService:
                     session_identifier, response_message, usage_info
                 )
             
-            # Check if we need demographics
+            # Check if we need demographics (ask all at once)
             if state.phase == "gathering" and self._need_demographics(state, classification):
-                demographic_question = self._get_next_demographic_question(state)
-                if demographic_question:
+                # Check if demographics are completely empty
+                if not state.demographics or len(state.demographics) == 0:
+                    # Ask for all demographics in one message
+                    demographic_question = prompt_manager.get_demographic_question("all")
                     response_message = self._build_response_with_empathy(
                         classification["empathy_response"],
                         demographic_question
@@ -190,36 +192,33 @@ class OptimizedSessionChatService:
                         session_identifier, response_message, usage_info
                     )
             
-            # Check if we're answering a demographic question
-            if self._is_demographic_response(chat_request.message, state):
-                self._save_demographic_response(session_identifier, chat_request.message, state)
+            # Check if we're answering a demographic question (asked all at once)
+            if self._is_demographic_response(message_store, session_identifier, state):
+                # Parse all demographics from one response
+                self._save_all_demographics_from_response(session_identifier, chat_request.message, state)
                 
-                # Check if more demographics needed
-                next_demo = self._get_next_demographic_question(state)
-                if next_demo:
+                # Done with demographics, start diagnostic questions
+                next_dimension = assessment_trigger.get_next_dimension_needed(session_identifier)
+                condition = state.condition_hypothesis[0] if state.condition_hypothesis else "general"
+                
+                question_result = await diagnostic_agent.generate_question(
+                    session_id=session_identifier,
+                    condition=condition,
+                    dimension_needed=next_dimension,
+                    context={"phase": "starting_diagnostics"}
+                )
+                
+                if question_result["success"]:
                     response_message = self._build_response_with_empathy(
                         classification["empathy_response"],
-                        next_demo
+                        question_result["question"]
                     )
                 else:
-                    # Done with demographics, start diagnostic questions
-                    next_dimension = assessment_trigger.get_next_dimension_needed(session_identifier)
-                    condition = state.condition_hypothesis[0] if state.condition_hypothesis else "general"
-                    
-                    question_result = await diagnostic_agent.generate_question(
-                        session_id=session_identifier,
-                        condition=condition,
-                        dimension_needed=next_dimension,
-                        context={"phase": "starting_diagnostics"}
+                    # Fallback if GPT fails
+                    response_message = self._build_response_with_empathy(
+                        classification["empathy_response"],
+                        "How long have you been experiencing these feelings? Days, weeks, or months?"
                     )
-                    
-                    if question_result["success"]:
-                        response_message = self._build_response_with_empathy(
-                            classification["empathy_response"],
-                            question_result["question"]
-                        )
-                    else:
-                        response_message = "Let me understand more about what you're experiencing. How long have you been feeling this way?"
                 
                 message_store.add_assistant_message(session_identifier, response_message)
                 return self._create_success_response(
@@ -352,42 +351,103 @@ class OptimizedSessionChatService:
         # Negative sentiment (valence < -0.3)
         return valence < -0.3 and state.questions_asked < 3
     
-    def _get_next_demographic_question(self, state) -> str:
-        """Get next demographic question to ask"""
-        if "name" not in state.demographics:
-            return prompt_manager.get_demographic_question("name")
-        if "age" not in state.demographics:
-            return prompt_manager.get_demographic_question("age")
-        if "gender" not in state.demographics:
-            return prompt_manager.get_demographic_question("gender")
-        return None
     
-    def _is_demographic_response(self, message: str, state) -> bool:
-        """Check if message is answering a demographic question"""
-        # Simple heuristic: if we're collecting demographics and haven't finished
-        if state.phase == "gathering" and state.questions_asked < 3:
-            if len(state.demographics) < 3:
-                return True
-        return False
+    def _is_demographic_response(self, message_store, session_id: str, state) -> bool:
+        """Check if user is responding to a demographic question"""
+        # Get the last assistant message to see what was asked
+        last_message = message_store.get_last_message(session_id)
+        
+        if not last_message or last_message["role"] != "assistant":
+            return False
+        
+        last_content = last_message["content"].lower()
+        
+        # Check if last message was asking for demographics (all at once)
+        demographic_indicators = [
+            "share your name, age, and gender",  # Our new combined question
+            "name, age, and gender",
+            "your name",
+            "preferred name", 
+            "what is your age",
+            "your age",
+            "your gender"
+        ]
+        
+        # Check if we're in demographic collection phase
+        is_asking_demographic = any(indicator in last_content for indicator in demographic_indicators)
+        
+        # Also check if demographics are incomplete
+        demographics_incomplete = not state.demographics or len(state.demographics) < 3
+        
+        return is_asking_demographic and demographics_incomplete
     
-    def _save_demographic_response(self, session_id: str, message: str, state):
-        """Save demographic response"""
+    def _save_all_demographics_from_response(self, session_id: str, message: str, state):
+        """
+        Parse all demographics (name, age, gender) from a single response
+        Example: "I'm Aditya, 25, male" or "Aditya, 25 years old, male"
+        """
+        import re
+        
+        demographics = {}
         message_lower = message.lower()
         
-        if "name" not in state.demographics:
-            # Assume this is name
-            name = message.split()[0] if message else "there"
-            self.state_manager.set_demographics(session_id, {"name": name})
-        elif "age" not in state.demographics:
-            # Extract age
-            import re
-            age_match = re.search(r'\d+', message)
+        # Extract age (look for numbers)
+        age_patterns = [
+            r'\b(\d{1,3})\s*(?:years?\s*old|yrs?|y\.?o\.?)?\b',  # "25 years old", "25 yrs", "25"
+            r'\bage[:\s]+(\d{1,3})\b',  # "age: 25"
+            r'\b(\d{1,3})\b'  # Any number
+        ]
+        
+        for pattern in age_patterns:
+            age_match = re.search(pattern, message_lower)
             if age_match:
-                self.state_manager.set_demographics(session_id, {"age": int(age_match.group())})
-        elif "gender" not in state.demographics:
-            # Save gender
-            gender = message.split()[0] if message else "not_specified"
-            self.state_manager.set_demographics(session_id, {"gender": gender})
+                age = int(age_match.group(1))
+                if 1 <= age <= 120:
+                    demographics["age"] = age
+                    break
+        
+        # Extract gender
+        if any(word in message_lower for word in ["male", "man", "boy", " m "]):
+            demographics["gender"] = "male"
+        elif any(word in message_lower for word in ["female", "woman", "girl", " f "]):
+            demographics["gender"] = "female"
+        elif any(word in message_lower for word in ["non-binary", "nonbinary", "enby", "nb"]):
+            demographics["gender"] = "non-binary"
+        elif any(word in message_lower for word in ["prefer not", "skip", "pass"]):
+            demographics["gender"] = "prefer_not_to_say"
+        
+        # Extract name (more sophisticated)
+        # Remove age and gender words to isolate name
+        name_message = message
+        if "age" in demographics:
+            name_message = re.sub(r'\d{1,3}\s*(?:years?\s*old|yrs?|y\.?o\.?)?', '', name_message, flags=re.IGNORECASE)
+        
+        # Remove common phrases
+        for phrase in ["i'm", "i am", "my name is", "call me", "male", "female", "man", "woman"]:
+            name_message = name_message.lower().replace(phrase, "")
+        
+        # Clean up and extract first word/name
+        name_parts = name_message.strip().split()
+        if name_parts:
+            # Get first meaningful word (not gender/age related)
+            for part in name_parts:
+                clean_part = re.sub(r'[^\w]', '', part).strip()
+                if clean_part and len(clean_part) > 1 and not clean_part.isdigit():
+                    demographics["name"] = clean_part.capitalize()
+                    break
+        
+        # Fallback if name not found
+        if "name" not in demographics:
+            # Use first word from original message
+            first_word = message.strip().split()[0] if message.strip() else "there"
+            demographics["name"] = first_word.capitalize()
+        
+        # Save all demographics
+        if demographics:
+            self.state_manager.set_demographics(session_id, demographics)
+            logger.info(f"Saved demographics for {session_id}: {demographics}")
+        else:
+            logger.warning(f"Could not parse demographics from: {message}")
     
     def _infer_dimension_from_context(self, state) -> str:
         """Infer which dimension was being asked about"""

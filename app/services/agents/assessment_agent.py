@@ -80,7 +80,7 @@ class AssessmentAgent:
             async def api_call():
                 response = await self.client.chat.completions.create(
                     model=self.MODEL_NAME,
-                    max_tokens=self.MAX_TOKENS,
+                    max_completion_tokens=self.MAX_TOKENS,  # GPT-5 uses max_completion_tokens
                     temperature=self.TEMPERATURE,
                     messages=[
                         {"role": "system", "content": self.system_prompt},
@@ -228,7 +228,7 @@ Provide a compassionate, clear summary for the user."""
             async def api_call():
                 response = await self.client.chat.completions.create(
                     model=self.MODEL_NAME,
-                    max_tokens=150,
+                    max_completion_tokens=150,  # GPT-5 uses max_completion_tokens
                     temperature=0.7,
                     messages=[
                         {"role": "user", "content": prompt}

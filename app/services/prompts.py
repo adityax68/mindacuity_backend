@@ -294,6 +294,7 @@ If you're not in immediate danger but need to talk, I'm here. But please know th
     # ==================== DEMOGRAPHIC COLLECTION ====================
     
     DEMOGRAPHIC_QUESTIONS = {
+        "all": "To provide you with a more personalized assessment, I'd like to know a bit about you. Could you share your name, age, and gender (if you're comfortable)?",
         "name": "To provide you with a more personalized assessment, may I know your name or preferred name?",
         "age": "What is your age?",
         "gender": "Your gender, if you're comfortable sharing?"
