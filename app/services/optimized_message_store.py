@@ -268,25 +268,35 @@ class OptimizedMessageHistoryStore:
             
             # Get recent messages from Redis
             messages = self.redis.lrange(cache_key, 0, 10, deserialize=True)  # Check last 10
+            logger.info(f"[DEBUG] get_last_assistant_message: Found {len(messages) if messages else 0} messages in Redis for session {session_id}")
+            
             if messages:
+                # Log all messages for debugging
+                for i, msg in enumerate(messages):
+                    logger.info(f"[DEBUG] Message {i}: role={msg.get('role')}, content_preview={msg.get('content', '')[:50]}...")
+                
                 # Find first assistant message
                 for msg in messages:
                     if msg.get("role") == "assistant":
+                        logger.info(f"[DEBUG] Found assistant message in Redis: '{msg.get('content', '')[:100]}...'")
                         return msg
             
             # Fallback to DB
+            logger.info(f"[DEBUG] No assistant message in Redis, checking DB...")
             db_message = self.db.query(Message).filter(
                 Message.session_identifier == session_id,
                 Message.role == "assistant"
             ).order_by(Message.created_at.desc()).first()
             
             if db_message:
+                logger.info(f"[DEBUG] Found assistant message in DB: '{db_message.content[:100]}...'")
                 return {
                     "role": db_message.role,
                     "content": db_message.content,
                     "created_at": db_message.created_at.isoformat() if db_message.created_at else None
                 }
             
+            logger.info(f"[DEBUG] No assistant message found anywhere for session {session_id}")
             return None
             
         except Exception as e:

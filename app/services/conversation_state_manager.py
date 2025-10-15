@@ -206,9 +206,19 @@ class ConversationStateManager:
         """
         Set or update demographics
         """
+        logger.info(f"[DEBUG] set_demographics called for {session_id} with demographics: {demographics}")
         state = self.get_state(session_id)
+        logger.info(f"[DEBUG] Current state.demographics before update: {state.demographics}")
         state.demographics.update(demographics)
-        return self.save_state(state)
+        logger.info(f"[DEBUG] State.demographics after update: {state.demographics}")
+        result = self.save_state(state)
+        logger.info(f"[DEBUG] save_state returned: {result}")
+        
+        # Verify save by re-fetching
+        verify_state = self.get_state(session_id)
+        logger.info(f"[DEBUG] Verification fetch - demographics are now: {verify_state.demographics}")
+        
+        return result
     
     def increment_off_topic_count(self, session_id: str) -> int:
         """

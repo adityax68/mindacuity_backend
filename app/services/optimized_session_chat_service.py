@@ -246,8 +246,9 @@ class OptimizedSessionChatService:
                     logger.info(f"[DEBUG] Demographics exist but need_demographics returned True: {state.demographics}")
             
             # Check if we're answering a demographic question (asked all at once)
+            logger.info(f"[DEBUG] BEFORE _is_demographic_response check - demographics: {state.demographics}, phase: {state.phase}")
             is_demo_response = self._is_demographic_response(message_store, session_identifier, state)
-            logger.info(f"[DEBUG] Is demographic response: {is_demo_response}, current demographics: {state.demographics}")
+            logger.info(f"[DEBUG] AFTER _is_demographic_response check - is_demo_response: {is_demo_response}, demographics: {state.demographics}")
             
             if is_demo_response:
                 # Parse all demographics from one response
@@ -449,15 +450,18 @@ class OptimizedSessionChatService:
     
     def _is_demographic_response(self, message_store, session_id: str, state) -> bool:
         """Check if user is responding to a demographic question"""
+        logger.info(f"[DEBUG] _is_demographic_response called for session {session_id}")
+        
         # Get the last ASSISTANT message to see what was asked
         # (Not just last message, which could be the user's message we just added!)
         last_assistant_message = message_store.get_last_assistant_message(session_id)
         
         if not last_assistant_message:
+            logger.info(f"[DEBUG] No last assistant message found, returning False")
             return False
         
         last_content = last_assistant_message["content"].lower()
-        logger.info(f"[DEBUG] Last assistant message: '{last_content[:100]}...'")
+        logger.info(f"[DEBUG] Last assistant message: '{last_content[:150]}...'")
         
         # Check if last message was asking for demographics (all at once)
         demographic_indicators = [
@@ -472,11 +476,15 @@ class OptimizedSessionChatService:
         
         # Check if we're in demographic collection phase
         is_asking_demographic = any(indicator in last_content for indicator in demographic_indicators)
+        logger.info(f"[DEBUG] is_asking_demographic: {is_asking_demographic}")
         
         # Also check if demographics are incomplete
         demographics_incomplete = not state.demographics or len(state.demographics) < 3
+        logger.info(f"[DEBUG] demographics_incomplete: {demographics_incomplete}, current demographics: {state.demographics}")
         
-        return is_asking_demographic and demographics_incomplete
+        result = is_asking_demographic and demographics_incomplete
+        logger.info(f"[DEBUG] _is_demographic_response returning: {result}")
+        return result
     
     def _save_all_demographics_from_response(self, session_id: str, message: str, state):
         """
@@ -484,6 +492,8 @@ class OptimizedSessionChatService:
         Example: "I'm Aditya, 25, male" or "Aditya, 25 years old, male"
         """
         import re
+        
+        logger.info(f"[DEBUG] _save_all_demographics_from_response called with message: '{message}'")
         
         demographics = {}
         message_lower = message.lower()
@@ -501,17 +511,22 @@ class OptimizedSessionChatService:
                 age = int(age_match.group(1))
                 if 1 <= age <= 120:
                     demographics["age"] = age
+                    logger.info(f"[DEBUG] Extracted age: {age}")
                     break
         
         # Extract gender
         if any(word in message_lower for word in ["male", "man", "boy", " m "]):
             demographics["gender"] = "male"
+            logger.info(f"[DEBUG] Extracted gender: male")
         elif any(word in message_lower for word in ["female", "woman", "girl", " f "]):
             demographics["gender"] = "female"
+            logger.info(f"[DEBUG] Extracted gender: female")
         elif any(word in message_lower for word in ["non-binary", "nonbinary", "enby", "nb"]):
             demographics["gender"] = "non-binary"
+            logger.info(f"[DEBUG] Extracted gender: non-binary")
         elif any(word in message_lower for word in ["prefer not", "skip", "pass"]):
             demographics["gender"] = "prefer_not_to_say"
+            logger.info(f"[DEBUG] Extracted gender: prefer_not_to_say")
         
         # Extract name (more sophisticated)
         # Remove age and gender words to isolate name
@@ -531,6 +546,7 @@ class OptimizedSessionChatService:
                 clean_part = re.sub(r'[^\w]', '', part).strip()
                 if clean_part and len(clean_part) > 1 and not clean_part.isdigit():
                     demographics["name"] = clean_part.capitalize()
+                    logger.info(f"[DEBUG] Extracted name: {demographics['name']}")
                     break
         
         # Fallback if name not found
@@ -538,13 +554,16 @@ class OptimizedSessionChatService:
             # Use first word from original message
             first_word = message.strip().split()[0] if message.strip() else "there"
             demographics["name"] = first_word.capitalize()
+            logger.info(f"[DEBUG] Using fallback name: {demographics['name']}")
         
         # Save all demographics
+        logger.info(f"[DEBUG] About to save demographics: {demographics}")
         if demographics:
-            self.state_manager.set_demographics(session_id, demographics)
-            logger.info(f"Saved demographics for {session_id}: {demographics}")
+            result = self.state_manager.set_demographics(session_id, demographics)
+            logger.info(f"[DEBUG] state_manager.set_demographics returned: {result}")
+            logger.info(f"[SUCCESS] Saved demographics for {session_id}: {demographics}")
         else:
-            logger.warning(f"Could not parse demographics from: {message}")
+            logger.warning(f"[WARNING] Could not parse demographics from: {message}")
     
     def _infer_dimension_from_context(self, state) -> str:
         """Infer which dimension was being asked about"""
