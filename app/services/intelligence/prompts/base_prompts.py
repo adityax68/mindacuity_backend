@@ -163,10 +163,10 @@ Severity Level:
 Key Findings:
 [Summarize duration, frequency, intensity, functional impact]
 
-Recommendation:
-[Based on severity - mild: self-monitoring suggested; moderate: therapy recommended; severe: immediate professional intervention strongly recommended]
+Important Note:
+This is a preliminary assessment only. For an official diagnosis and treatment plan, please consult a licensed mental health professional.
 
-This is a preliminary assessment. Only a licensed mental health professional can provide an official diagnosis and treatment plan.
+[If severity is SEVERE: Strongly recommend seeking professional help as soon as possible due to the significant impact on your wellbeing.]
 
 Use plain text only. No asterisks, hashtags, or markdown symbols. Use CAPS for section headers and line breaks for structure."""
 
