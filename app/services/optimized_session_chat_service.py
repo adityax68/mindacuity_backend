@@ -149,6 +149,12 @@ class OptimizedSessionChatService:
                 self.state_manager.set_risk_level(session_identifier, "crisis")
                 self.state_manager.set_phase(session_identifier, "complete")
                 
+                # INCREMENT USAGE BEFORE RETURNING!
+                self.subscription_service.increment_usage(db, session_identifier)
+                usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
+                if usage_info.get("message_limit"):
+                    usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
+                
                 return self._create_success_response(
                     session_identifier, response_message, usage_info
                 )
@@ -163,6 +169,12 @@ class OptimizedSessionChatService:
                 # If too many off-topic messages, end conversation
                 if off_topic_count >= 3:
                     self.state_manager.set_phase(session_identifier, "complete")
+                
+                # INCREMENT USAGE BEFORE RETURNING!
+                self.subscription_service.increment_usage(db, session_identifier)
+                usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
+                if usage_info.get("message_limit"):
+                    usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
                 
                 return self._create_success_response(
                     session_identifier, redirect_message, usage_info
@@ -194,6 +206,12 @@ class OptimizedSessionChatService:
                 message_store.add_assistant_message(session_identifier, response_message)
                 self.state_manager.set_phase(session_identifier, "gathering")
                 
+                # INCREMENT USAGE BEFORE RETURNING!
+                self.subscription_service.increment_usage(db, session_identifier)
+                usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
+                if usage_info.get("message_limit"):
+                    usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
+                
                 return self._create_success_response(
                     session_identifier, response_message, usage_info
                 )
@@ -210,6 +228,12 @@ class OptimizedSessionChatService:
                     )
                     message_store.add_assistant_message(session_identifier, response_message)
                     
+                    # INCREMENT USAGE BEFORE RETURNING!
+                    self.subscription_service.increment_usage(db, session_identifier)
+                    usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
+                    if usage_info.get("message_limit"):
+                        usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
+                    
                     return self._create_success_response(
                         session_identifier, response_message, usage_info
                     )
@@ -223,12 +247,15 @@ class OptimizedSessionChatService:
                 next_dimension = assessment_trigger.get_next_dimension_needed(session_identifier)
                 condition = state.condition_hypothesis[0] if state.condition_hypothesis else "general"
                 
+                step_start = datetime.utcnow()
+                logger.info(f"[PERF] Calling Diagnostic agent after demographics for dimension: {next_dimension}...")
                 question_result = await diagnostic_agent.generate_question(
                     session_id=session_identifier,
                     condition=condition,
                     dimension_needed=next_dimension,
                     context={"phase": "starting_diagnostics"}
                 )
+                logger.info(f"[PERF] Diagnostic agent took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
                 
                 if question_result["success"]:
                     response_message = self._build_response_with_empathy(
@@ -237,12 +264,20 @@ class OptimizedSessionChatService:
                     )
                 else:
                     # Fallback if GPT fails
+                    logger.warning(f"Diagnostic agent failed after demographics, using fallback. Error: {question_result.get('error')}")
                     response_message = self._build_response_with_empathy(
                         classification["empathy_response"],
                         "How long have you been experiencing these feelings? Days, weeks, or months?"
                     )
                 
                 message_store.add_assistant_message(session_identifier, response_message)
+                
+                # INCREMENT USAGE BEFORE RETURNING!
+                self.subscription_service.increment_usage(db, session_identifier)
+                usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
+                if usage_info.get("message_limit"):
+                    usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
+                
                 return self._create_success_response(
                     session_identifier, response_message, usage_info
                 )
@@ -262,6 +297,12 @@ class OptimizedSessionChatService:
                 )
                 message_store.add_assistant_message(session_identifier, response_message)
                 self.state_manager.set_phase(session_identifier, "complete")
+                
+                # INCREMENT USAGE BEFORE RETURNING!
+                self.subscription_service.increment_usage(db, session_identifier)
+                usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
+                if usage_info.get("message_limit"):
+                    usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
                 
                 return self._create_success_response(
                     session_identifier, response_message, usage_info
