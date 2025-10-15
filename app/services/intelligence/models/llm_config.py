@@ -123,14 +123,14 @@ MODEL_ROUTING: Dict[TaskType, Dict[str, Any]] = {
 # Model-specific settings
 OPENAI_CONFIG = {
     "api_key": os.getenv("OPENAI_API_KEY"),
-    "timeout": 30.0,
-    "max_retries": 3,
+    "timeout": 45.0,  # Increased timeout for GPT-5/4o
+    "max_retries": 2,  # Reduced retries for faster failure
 }
 
 ANTHROPIC_CONFIG = {
     "api_key": os.getenv("ANTHROPIC_API_KEY"),
-    "timeout": 30.0,
-    "max_retries": 3,
+    "timeout": 45.0,  # Increased timeout for Claude
+    "max_retries": 2,  # Reduced retries for faster failure
     "default_max_tokens": 500,
 }
 

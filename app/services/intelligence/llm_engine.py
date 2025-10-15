@@ -48,7 +48,7 @@ class LLMEngine:
         
         # GPT-5 for complex reasoning and diagnosis
         self.gpt5 = ChatOpenAI(
-            model="gpt-5",
+            model="gpt-4o",  # Fallback to GPT-4o if GPT-5 not available
             temperature=0.4,
             max_tokens=1000,
             timeout=OPENAI_CONFIG["timeout"],
@@ -186,8 +186,13 @@ class LLMEngine:
                     pass
             
             # Generate response
-            logger.info(f"Generating response with {config.get('model')} for {task_type}")
+            logger.info(f"🤖 Generating with {config.get('model')} for {task_type}")
+            start_time = asyncio.get_event_loop().time()
+            
             response = await model.ainvoke(messages)
+            
+            elapsed = asyncio.get_event_loop().time() - start_time
+            logger.info(f"✓ Generated in {elapsed:.2f}s with {config.get('model')}")
             
             return response.content
         

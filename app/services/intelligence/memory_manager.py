@@ -31,8 +31,9 @@ class MemoryManager:
     def __init__(self):
         """Initialize Redis connection"""
         self.redis_client = self._connect_redis()
-        self.ttl = 3600  # 1 hour session timeout
-        logger.info("Memory Manager initialized")
+        self.ttl = 7200  # 2 hour session timeout (increased for better UX)
+        self.use_redis = self.redis_client is not None
+        logger.info(f"Memory Manager initialized (Redis: {'enabled' if self.use_redis else 'disabled'})")
     
     def _connect_redis(self) -> redis.Redis:
         """Connect to Redis"""
@@ -69,19 +70,28 @@ class MemoryManager:
         Returns:
             ConversationState
         """
-        # Try Redis first (fast)
-        if self.redis_client:
-            cached_state = await self._load_from_redis(session_id)
-            if cached_state:
-                logger.info(f"Loaded state from Redis cache for session {session_id}")
-                return cached_state
+        # Try Redis first (fast) - only if enabled
+        if self.use_redis:
+            try:
+                cached_state = await self._load_from_redis(session_id)
+                if cached_state:
+                    logger.info(f"✓ Cache HIT: Loaded state from Redis for session {session_id}")
+                    return cached_state
+                else:
+                    logger.info(f"✗ Cache MISS: Redis cache empty for session {session_id}")
+            except Exception as e:
+                logger.warning(f"Redis load failed, falling back to PostgreSQL: {e}")
         
         # Fallback to PostgreSQL
         state = await self._load_from_postgres(session_id, db)
         
-        # Cache in Redis for next time
-        if self.redis_client and state:
-            await self._save_to_redis(session_id, state)
+        # Cache in Redis for next time (only if enabled)
+        if self.use_redis and state:
+            try:
+                await self._save_to_redis(session_id, state)
+                logger.info(f"✓ Cached state in Redis for session {session_id}")
+            except Exception as e:
+                logger.warning(f"Failed to cache state in Redis: {e}")
         
         return state
     
@@ -102,14 +112,18 @@ class MemoryManager:
         # Update timestamp
         state['last_updated'] = datetime.now()
         
-        # Save to Redis (fast cache)
-        if self.redis_client:
-            await self._save_to_redis(session_id, state)
+        # Save to Redis (fast cache) - only if enabled
+        if self.use_redis:
+            try:
+                await self._save_to_redis(session_id, state)
+                logger.info(f"✓ Saved state to Redis for session {session_id}")
+            except Exception as e:
+                logger.warning(f"Failed to save state to Redis: {e}")
         
         # Messages are saved to PostgreSQL by MessageHistoryStore (existing system)
         # We don't need to duplicate that here
         
-        logger.info(f"Saved state for session {session_id}")
+        logger.debug(f"State updated for session {session_id}")
     
     async def _load_from_redis(self, session_id: str) -> Optional[ConversationState]:
         """Load state from Redis cache"""

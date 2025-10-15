@@ -116,19 +116,30 @@ class ConversationOrchestrator:
         try:
             logger.info(f"Processing message for session {session_id}")
             
-            # CRITICAL: Check for crisis FIRST, at every message
-            crisis_result = await self.llm_engine.detect_crisis_ensemble(user_message)
+            # CRITICAL: Quick keyword-based crisis check first (fast, no API calls)
+            crisis_keywords = [
+                "kill myself", "suicide", "end my life", "want to die",
+                "hurt myself", "self harm", "cut myself", "overdose",
+                "not worth living", "better off dead", "no reason to live",
+            ]
+            message_lower = user_message.lower()
+            has_crisis_keywords = any(keyword in message_lower for keyword in crisis_keywords)
             
-            if crisis_result["is_crisis"]:
-                logger.warning(f"CRISIS DETECTED for session {session_id}: confidence={crisis_result['confidence']}")
+            # Only run expensive ensemble detection if keywords detected
+            if has_crisis_keywords:
+                logger.warning(f"Crisis keywords detected for session {session_id}, running full ensemble check")
+                crisis_result = await self.llm_engine.detect_crisis_ensemble(user_message)
                 
-                # Save to history for tracking
-                history_store = MessageHistoryStore(db=db)
-                chat_history = history_store.get_chat_history(session_id)
-                chat_history.add_user_message(user_message)
-                chat_history.add_ai_message(CRISIS_RESPONSE_TEMPLATE)
-                
-                return CRISIS_RESPONSE_TEMPLATE
+                if crisis_result["is_crisis"]:
+                    logger.warning(f"CRISIS CONFIRMED for session {session_id}: confidence={crisis_result['confidence']}")
+                    
+                    # Save to history for tracking
+                    history_store = MessageHistoryStore(db=db)
+                    chat_history = history_store.get_chat_history(session_id)
+                    chat_history.add_user_message(user_message)
+                    chat_history.add_ai_message(CRISIS_RESPONSE_TEMPLATE)
+                    
+                    return CRISIS_RESPONSE_TEMPLATE
             
             # Load conversation state
             state = await self.memory_manager.load_state(session_id, db)
@@ -215,8 +226,20 @@ class ConversationOrchestrator:
     async def greeting_node(self, state: ConversationState) -> ConversationState:
         """Node: Handle greeting and initial assessment"""
         try:
-            last_message = state["messages"][-1].content
+            last_message = state["messages"][-1].content.lower()
             
+            # Check if this is just a greeting (hi, hello, hey, etc.)
+            simple_greetings = ["hi", "hello", "hey", "yo", "greetings", "good morning", "good evening", "good afternoon"]
+            is_simple_greeting = any(greeting in last_message for greeting in simple_greetings) and len(last_message.split()) <= 3
+            
+            # If it's just a simple greeting, respond and ask what they're struggling with
+            if is_simple_greeting:
+                response = "Hello! I'm Acutie, your mental health assessment assistant. What are you currently struggling with—anxiety, low mood, stress, sleep problems, or something else?"
+                state["messages"].append(AIMessage(content=response))
+                state["current_stage"] = ConversationStages.ASSESSMENT
+                return state
+            
+            # Otherwise, user has already mentioned a concern - proceed with sentiment analysis
             # Analyze sentiment
             sentiment_prompt = SENTIMENT_ANALYSIS_PROMPT.format(message=last_message)
             sentiment = await self.llm_engine.generate(
@@ -230,17 +253,13 @@ class ConversationOrchestrator:
             if state["sentiment"] == "negative":
                 # Use Claude for empathetic greeting
                 system_msg = SystemMessage(content=BASE_SYSTEM_PROMPT)
-                history_context = "\n".join([
-                    f"{'User' if isinstance(msg, HumanMessage) else 'Assistant'}: {msg.content}"
-                    for msg in state["messages"][-3:]
-                ])
                 
-                greeting_prompt = f"""This is the start of a conversation. The user expressed: "{last_message}"
+                greeting_prompt = f"""The user shared their concern: "{last_message}"
 
-The sentiment is negative, showing distress. Provide a warm, empathetic greeting following these rules:
-- Introduce yourself as Acutie ONCE
-- Acknowledge their difficulty
-- Ask for their name or preferred name
+The sentiment is negative, showing distress. Provide a warm, empathetic response following these rules:
+- Introduce yourself as Acutie briefly if needed
+- Acknowledge their difficulty with empathy
+- Ask your first assessment question: How long have you been experiencing these feelings? Days, weeks, or months?
 - Keep it natural and warm
 - NO markdown symbols
 - Be concise (2-3 sentences)
@@ -253,18 +272,19 @@ Your response:"""
                     use_cache=True,
                 )
                 
-                state["needs_demographics"] = True
+                state["needs_demographics"] = False  # Skip demographics for now
+                state["question_count"] = 1
+                state["questions_asked"].append("duration")
             
             else:
                 # Use GPT-4o-mini for neutral/positive greeting
                 system_msg = SystemMessage(content=BASE_SYSTEM_PROMPT)
                 
-                greeting_prompt = f"""This is the start of a conversation. The user said: "{last_message}"
+                greeting_prompt = f"""The user mentioned: "{last_message}"
 
-Provide a brief professional greeting and ask your first assessment question:
-- Introduce yourself as Acutie
-- Skip demographics (neutral sentiment)
-- Ask about duration: how long they've experienced this
+Provide a brief professional response and ask your first assessment question:
+- Introduce yourself as Acutie briefly
+- Ask about duration: How long have you been experiencing these feelings? Days, weeks, or months?
 - Be direct and clear
 - NO markdown symbols
 
@@ -286,7 +306,7 @@ Your response:"""
         
         except Exception as e:
             logger.error(f"Error in greeting_node: {e}")
-            fallback = "Hello, I'm Acutie, your mental health assessment assistant. How can I help you today?"
+            fallback = "Hello, I'm Acutie, your mental health assessment assistant. What are you currently struggling with?"
             state["messages"].append(AIMessage(content=fallback))
             return state
     
@@ -306,13 +326,22 @@ Your response:"""
             try:
                 extracted_data = json.loads(extracted_json)
                 state["symptoms"].update(extracted_data)
+                logger.info(f"Extracted symptoms: {extracted_data}")
             except json.JSONDecodeError:
-                logger.warning("Could not parse extracted data as JSON")
+                logger.warning(f"Could not parse extracted data as JSON: {extracted_json}")
             
             # Check if we have enough information for diagnosis
             question_count = state.get("question_count", 0)
+            logger.info(f"Assessment progress: {question_count} questions asked, {len(state['symptoms'])} symptoms collected")
             
-            if question_count >= 5 and len(state["symptoms"]) >= 4:
+            # Trigger diagnosis after 6-7 questions OR if we have comprehensive data
+            should_diagnose = (
+                question_count >= 6 or  # After 6 questions minimum
+                (question_count >= 5 and len(state["symptoms"]) >= 5)  # Or 5 questions with good data
+            )
+            
+            if should_diagnose:
+                logger.info("Sufficient data collected, generating diagnosis")
                 # Ready for diagnosis
                 state["ready_for_diagnosis"] = True
                 state["_routing_intent"] = "diagnosis"  # Route to diagnosis
@@ -329,19 +358,44 @@ Your response:"""
                     for msg in state["messages"][-6:]
                 ])
                 
-                # Extract EXACT condition mentioned by user, not generic
-                first_user_message = next((msg.content for msg in state["messages"] if isinstance(msg, HumanMessage)), "")
+                # Extract EXACT condition mentioned by user from ALL their messages
+                all_user_messages = " ".join([msg.content for msg in state["messages"] if isinstance(msg, HumanMessage)])
                 
-                # Detect specific conditions from first message
+                # Detect specific conditions from all user messages
                 detected_condition = "their concern"
-                if "anxious" in first_user_message.lower() or "anxiety" in first_user_message.lower():
+                lower_messages = all_user_messages.lower()
+                if "angry" in lower_messages or "anger" in lower_messages or "irritat" in lower_messages:
+                    detected_condition = "anger and irritability"
+                elif "anxious" in lower_messages or "anxiety" in lower_messages:
                     detected_condition = "anxiety"
-                elif "depress" in first_user_message.lower() or "sad" in first_user_message.lower():
+                elif "depress" in lower_messages or "sad" in lower_messages:
                     detected_condition = "depression"  
-                elif "stress" in first_user_message.lower():
+                elif "stress" in lower_messages:
                     detected_condition = "stress"
-                elif "trauma" in first_user_message.lower() or "ptsd" in first_user_message.lower():
+                elif "trauma" in lower_messages or "ptsd" in lower_messages:
                     detected_condition = "trauma"
+                
+                # Determine next question topic based on what's already asked
+                asked = set(state["questions_asked"])
+                next_topic = None
+                if "frequency" not in asked:
+                    next_topic = "frequency"
+                    state["questions_asked"].append("frequency")
+                elif "intensity" not in asked:
+                    next_topic = "intensity"
+                    state["questions_asked"].append("intensity")
+                elif "triggers" not in asked:
+                    next_topic = "triggers"
+                    state["questions_asked"].append("triggers")
+                elif "impact" not in asked:
+                    next_topic = "impact"
+                    state["questions_asked"].append("impact")
+                elif "physical_symptoms" not in asked:
+                    next_topic = "physical_symptoms"
+                    state["questions_asked"].append("physical_symptoms")
+                elif "coping" not in asked:
+                    next_topic = "coping"
+                    state["questions_asked"].append("coping")
                 
                 question_prompt = QUESTION_GENERATION_PROMPT.format(
                     detected_condition=detected_condition,
@@ -359,11 +413,13 @@ Your response:"""
                 state["messages"].append(AIMessage(content=next_question))
                 state["question_count"] += 1
                 state["current_stage"] = ConversationStages.ASSESSMENT
+                
+                logger.info(f"Generated question #{state['question_count']}, topic: {next_topic}")
             
             return state
         
         except Exception as e:
-            logger.error(f"Error in assessment_node: {e}")
+            logger.error(f"Error in assessment_node: {e}", exc_info=True)
             fallback = "Could you tell me more about how this has been affecting you?"
             state["messages"].append(AIMessage(content=fallback))
             return state
@@ -371,28 +427,51 @@ Your response:"""
     async def diagnosis_node(self, state: ConversationState) -> ConversationState:
         """Node: Generate diagnosis and assessment report"""
         try:
-            # Prepare collected data
+            # Prepare collected data with ALL user messages for comprehensive analysis
+            all_user_messages = [msg.content for msg in state["messages"] if isinstance(msg, HumanMessage)]
+            conversation_transcript = "\n".join([
+                f"{'User' if isinstance(msg, HumanMessage) else 'Assistant'}: {msg.content}"
+                for msg in state["messages"]
+            ])
+            
             assessment_data = {
                 "symptoms": state["symptoms"],
                 "question_count": state["question_count"],
                 "questions_asked": state["questions_asked"],
                 "sentiment": state["sentiment"],
+                "all_user_responses": all_user_messages,
+                "conversation_transcript": conversation_transcript
             }
             
+            logger.info(f"Generating diagnosis with data: {len(all_user_messages)} user messages, {len(state['symptoms'])} symptoms")
+            
             # Step 1: Clinical analysis using GPT-5
-            analysis_prompt = DIAGNOSIS_ANALYSIS_PROMPT.format(
-                assessment_data=json.dumps(assessment_data, indent=2)
-            )
+            analysis_prompt = f"""{DIAGNOSIS_ANALYSIS_PROMPT.format(assessment_data=json.dumps(assessment_data, indent=2))}
+
+IMPORTANT: 
+- Identify SPECIFIC conditions mentioned by the user (e.g., anger issues, irritability, anxiety, depression)
+- Provide SEVERITY LEVEL for each condition: MILD, MODERATE, or SEVERE
+- Base severity on: frequency (daily vs weekly), intensity (1-10 scale), duration, and functional impact
+- Include specific examples from their responses in the rationale"""
             
             analysis_json = await self.llm_engine.generate(
                 messages=[HumanMessage(content=analysis_prompt)],
                 task_type=TaskType.DIAGNOSIS_ANALYSIS,
             )
             
+            logger.info(f"GPT-5 analysis: {analysis_json}")
+            
             # Step 2: Format into natural language report using Claude
-            formatting_prompt = DIAGNOSIS_FORMATTING_PROMPT.format(
-                analysis_json=analysis_json
-            )
+            formatting_prompt = f"""{DIAGNOSIS_FORMATTING_PROMPT.format(analysis_json=analysis_json)}
+
+CRITICAL REQUIREMENTS:
+- Use plain text only (NO markdown, NO asterisks, NO hashtags)
+- Include SPECIFIC conditions identified (not generic)
+- State clear SEVERITY LEVEL for each condition: MILD, MODERATE, or SEVERE
+- Explain the severity rating based on their responses
+- Include empathy and understanding in the tone
+- End with appropriate recommendation based on severity
+- Use section headers in CAPS with line breaks for structure"""
             
             system_msg = SystemMessage(content=BASE_SYSTEM_PROMPT)
             formatted_report = await self.llm_engine.generate(
@@ -400,6 +479,8 @@ Your response:"""
                 task_type=TaskType.DIAGNOSIS_FORMATTING,
                 use_cache=True,
             )
+            
+            logger.info(f"Claude formatted report: {formatted_report[:200]}...")
             
             # Add diagnosis to messages
             state["messages"].append(AIMessage(content=formatted_report))
@@ -409,8 +490,27 @@ Your response:"""
             return state
         
         except Exception as e:
-            logger.error(f"Error in diagnosis_node: {e}")
-            fallback = "Based on what you've shared, I recommend speaking with a mental health professional who can provide a proper assessment and support. This conversation has given me helpful information, but a licensed professional can offer you an official diagnosis and treatment plan."
+            logger.error(f"Error in diagnosis_node: {e}", exc_info=True)
+            
+            # Provide a more helpful fallback based on what we know
+            detected_issue = "your concerns"
+            all_messages = " ".join([msg.content for msg in state["messages"] if isinstance(msg, HumanMessage)])
+            if "angry" in all_messages.lower() or "irritat" in all_messages.lower():
+                detected_issue = "anger and irritability issues"
+            elif "anxi" in all_messages.lower():
+                detected_issue = "anxiety"
+            elif "depress" in all_messages.lower():
+                detected_issue = "depression"
+            
+            fallback = f"""Based on what you've shared about {detected_issue}, I recommend speaking with a mental health professional who can provide a proper assessment and support.
+
+While I've gathered helpful information from our conversation, a licensed mental health professional can:
+- Provide an official diagnosis
+- Create a personalized treatment plan
+- Offer ongoing support and therapy
+
+Your wellbeing is important, and professional help can make a significant difference."""
+            
             state["messages"].append(AIMessage(content=fallback))
             return state
     
