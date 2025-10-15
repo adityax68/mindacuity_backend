@@ -14,6 +14,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
 from app.models import Message
 from app.services.redis_client import redis_client
+from app.database import SessionLocal  # NEW: Import session factory
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,7 @@ class OptimizedMessageHistoryStore:
             self.redis.expire(cache_key, self.CONTEXT_TTL)
             
             # Write to PostgreSQL in thread pool (truly non-blocking)
+            # Note: We pass data, NOT the session (sessions aren't thread-safe)
             loop = asyncio.get_event_loop()
             loop.run_in_executor(
                 _db_write_executor,
@@ -162,27 +164,41 @@ class OptimizedMessageHistoryStore:
             logger.error(f"Error adding message for session {session_id}: {e}")
             return False
     
-    def _save_to_db_sync(self, session_id: str, role: str, content: str):
+    @staticmethod
+    def _save_to_db_sync(session_id: str, role: str, content: str):
         """
         Synchronous database write (runs in thread pool, doesn't block event loop)
+        Creates its OWN session (thread-safe!)
         """
+        db = None
         try:
+            # Create a NEW session for this thread (SQLAlchemy sessions aren't thread-safe!)
+            db = SessionLocal()
+            
             message = Message(
                 session_identifier=session_id,
                 role=role,
                 content=content,
                 created_at=datetime.utcnow()
             )
-            self.db.add(message)
-            self.db.commit()
+            db.add(message)
+            db.commit()
             logger.debug(f"[PERF] DB write completed for session {session_id}")
             
         except Exception as e:
             logger.error(f"Failed to save message to DB for session {session_id}: {e}")
-            try:
-                self.db.rollback()
-            except Exception as rollback_error:
-                logger.error(f"Failed to rollback: {rollback_error}")
+            if db:
+                try:
+                    db.rollback()
+                except Exception as rollback_error:
+                    logger.error(f"Failed to rollback: {rollback_error}")
+        finally:
+            # Always close the session we created
+            if db:
+                try:
+                    db.close()
+                except Exception as close_error:
+                    logger.error(f"Failed to close DB session: {close_error}")
     
     def add_user_message(self, session_id: str, content: str) -> bool:
         """Convenience method to add user message"""
