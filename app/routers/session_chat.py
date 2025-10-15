@@ -12,7 +12,7 @@ from app.schemas import (
     SessionConversationResponse,
     User
 )
-from app.services.session_chat_service import SessionChatService
+from app.services.optimized_session_chat_service import OptimizedSessionChatService as SessionChatService
 from app.services.subscription_service import SubscriptionService
 from app.auth import get_current_active_user
 from app.models import UserFreeService, Subscription

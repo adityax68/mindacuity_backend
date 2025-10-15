@@ -263,7 +263,7 @@ class QuestionsResponse(BaseModel):
 # NEW: Session-based chat schemas
 
 class SessionChatMessageRequest(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1, max_length=400, description="Message must be between 1 and 400 characters")
     session_identifier: str
 
 class SessionChatResponse(BaseModel):

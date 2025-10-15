@@ -21,6 +21,16 @@ class Settings(BaseSettings):
     # OpenAI Configuration
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     
+    # Anthropic Configuration
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    
+    # Redis Configuration
+    redis_host: str = os.getenv("REDIS_HOST", "localhost")
+    redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
+    redis_password: Optional[str] = os.getenv("REDIS_PASSWORD", None)
+    redis_db: int = int(os.getenv("REDIS_DB", "0"))
+    redis_ssl: bool = os.getenv("REDIS_SSL", "False").lower() == "true"
+    
     # Encryption Configuration
     encryption_key: str = os.getenv("ENCRYPTION_KEY", "")
     
