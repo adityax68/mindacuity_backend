@@ -133,3 +133,4 @@ def safe_execute(func: Callable, *args, fallback=None, **kwargs) -> Any:
         return fallback
 
 
+
