@@ -217,9 +217,14 @@ class OptimizedSessionChatService:
                 )
             
             # Check if we need demographics (ask all at once)
-            if state.phase == "gathering" and self._need_demographics(state, classification):
+            logger.info(f"[DEBUG] Checking demographics - phase: {state.phase}, demographics: {state.demographics}, questions_asked: {state.questions_asked}")
+            need_demo = self._need_demographics(state, classification)
+            logger.info(f"[DEBUG] Need demographics: {need_demo}, sentiment: {classification.get('sentiment')}")
+            
+            if state.phase == "gathering" and need_demo:
                 # Check if demographics are completely empty
                 if not state.demographics or len(state.demographics) == 0:
+                    logger.info(f"[DEBUG] Asking for demographics (empty check passed)")
                     # Ask for all demographics in one message
                     demographic_question = prompt_manager.get_demographic_question("all")
                     response_message = self._build_response_with_empathy(
@@ -237,11 +242,21 @@ class OptimizedSessionChatService:
                     return self._create_success_response(
                         session_identifier, response_message, usage_info
                     )
+                else:
+                    logger.info(f"[DEBUG] Demographics exist but need_demographics returned True: {state.demographics}")
             
             # Check if we're answering a demographic question (asked all at once)
-            if self._is_demographic_response(message_store, session_identifier, state):
+            is_demo_response = self._is_demographic_response(message_store, session_identifier, state)
+            logger.info(f"[DEBUG] Is demographic response: {is_demo_response}, current demographics: {state.demographics}")
+            
+            if is_demo_response:
                 # Parse all demographics from one response
+                logger.info(f"[DEBUG] Parsing demographics from: '{chat_request.message}'")
                 self._save_all_demographics_from_response(session_identifier, chat_request.message, state)
+                
+                # Refresh state to confirm demographics were saved
+                state = self.state_manager.get_state(session_identifier)
+                logger.info(f"[DEBUG] After saving demographics: {state.demographics}")
                 
                 # Done with demographics, start diagnostic questions
                 next_dimension = assessment_trigger.get_next_dimension_needed(session_identifier)
@@ -258,17 +273,21 @@ class OptimizedSessionChatService:
                 logger.info(f"[PERF] Diagnostic agent took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
                 
                 if question_result["success"]:
-                    response_message = self._build_response_with_empathy(
-                        classification["empathy_response"],
-                        question_result["question"]
-                    )
+                    empathy = classification.get("empathy_response", "")
+                    question = question_result["question"]
+                    logger.info(f"[DEBUG] Building response - empathy: '{empathy}', question: '{question}'")
+                    response_message = self._build_response_with_empathy(empathy, question)
                 else:
                     # Fallback if GPT fails
                     logger.warning(f"Diagnostic agent failed after demographics, using fallback. Error: {question_result.get('error')}")
-                    response_message = self._build_response_with_empathy(
-                        classification["empathy_response"],
-                        "How long have you been experiencing these feelings? Days, weeks, or months?"
-                    )
+                    fallback_question = "How long have you been experiencing these feelings? Days, weeks, or months?"
+                    # Use empathy if available, otherwise just the question
+                    empathy = classification.get("empathy_response", "")
+                    if empathy and empathy.strip() and empathy.strip() != "?":
+                        response_message = f"{empathy}\n\n{fallback_question}"
+                    else:
+                        response_message = fallback_question
+                    logger.info(f"[DEBUG] Using fallback response: '{response_message}'")
                 
                 message_store.add_assistant_message(session_identifier, response_message)
                 
