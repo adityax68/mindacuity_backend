@@ -132,3 +132,4 @@ def safe_execute(func: Callable, *args, fallback=None, **kwargs) -> Any:
         logger.error(f"Error in {func.__name__}: {e}")
         return fallback
 
+
