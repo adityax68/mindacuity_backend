@@ -216,39 +216,11 @@ class OptimizedSessionChatService:
                     session_identifier, response_message, usage_info
                 )
             
-            # Check if we need demographics (ask all at once)
-            logger.info(f"[DEBUG] Checking demographics - phase: {state.phase}, demographics: {state.demographics}, questions_asked: {state.questions_asked}")
-            need_demo = self._need_demographics(state, classification)
-            logger.info(f"[DEBUG] Need demographics: {need_demo}, sentiment: {classification.get('sentiment')}")
-            
-            if state.phase == "gathering" and need_demo:
-                # Check if demographics are completely empty
-                if not state.demographics or len(state.demographics) == 0:
-                    logger.info(f"[DEBUG] Asking for demographics (empty check passed)")
-                    # Ask for all demographics in one message
-                    demographic_question = prompt_manager.get_demographic_question("all")
-                    response_message = self._build_response_with_empathy(
-                        classification["empathy_response"],
-                        demographic_question
-                    )
-                    message_store.add_assistant_message(session_identifier, response_message)
-                    
-                    # INCREMENT USAGE BEFORE RETURNING!
-                    self.subscription_service.increment_usage(db, session_identifier)
-                    usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
-                    if usage_info.get("message_limit"):
-                        usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
-                    
-                    return self._create_success_response(
-                        session_identifier, response_message, usage_info
-                    )
-                else:
-                    logger.info(f"[DEBUG] Demographics exist but need_demographics returned True: {state.demographics}")
-            
-            # Check if we're answering a demographic question (asked all at once)
-            logger.info(f"[DEBUG] BEFORE _is_demographic_response check - demographics: {state.demographics}, phase: {state.phase}")
+            # IMPORTANT: Check if user is RESPONDING to demographics FIRST
+            # (Before checking if we need to ask - to avoid asking when they just answered!)
+            logger.info(f"[DEBUG] STEP 1: Check if responding to demographics - demographics: {state.demographics}, phase: {state.phase}")
             is_demo_response = self._is_demographic_response(message_store, session_identifier, state)
-            logger.info(f"[DEBUG] AFTER _is_demographic_response check - is_demo_response: {is_demo_response}, demographics: {state.demographics}")
+            logger.info(f"[DEBUG] Is demographic response: {is_demo_response}")
             
             if is_demo_response:
                 # Parse all demographics from one response
@@ -301,6 +273,35 @@ class OptimizedSessionChatService:
                 return self._create_success_response(
                     session_identifier, response_message, usage_info
                 )
+            
+            # Now check if we NEED to ask for demographics (only if user didn't just provide them)
+            logger.info(f"[DEBUG] STEP 2: Check if we need to ask for demographics - demographics: {state.demographics}")
+            need_demo = self._need_demographics(state, classification)
+            logger.info(f"[DEBUG] Need demographics: {need_demo}, sentiment: {classification.get('sentiment')}")
+            
+            if state.phase == "gathering" and need_demo:
+                # Check if demographics are completely empty
+                if not state.demographics or len(state.demographics) == 0:
+                    logger.info(f"[DEBUG] Asking for demographics (empty check passed)")
+                    # Ask for all demographics in one message
+                    demographic_question = prompt_manager.get_demographic_question("all")
+                    response_message = self._build_response_with_empathy(
+                        classification["empathy_response"],
+                        demographic_question
+                    )
+                    message_store.add_assistant_message(session_identifier, response_message)
+                    
+                    # INCREMENT USAGE BEFORE RETURNING!
+                    self.subscription_service.increment_usage(db, session_identifier)
+                    usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
+                    if usage_info.get("message_limit"):
+                        usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
+                    
+                    return self._create_success_response(
+                        session_identifier, response_message, usage_info
+                    )
+                else:
+                    logger.info(f"[DEBUG] Demographics exist but need_demographics returned True: {state.demographics}")
             
             # Check if we should trigger assessment
             should_assess, reason = assessment_trigger.should_trigger_assessment(session_identifier)
