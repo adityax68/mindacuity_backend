@@ -899,7 +899,7 @@ This preliminary assessment is not a substitute for professional diagnosis and c
                 # Continue to diagnostic questions below
             
             # Check if we still need demographics
-            if self._need_demographics(state):
+            if self._need_demographics(state, classification):
                 demo_question = "To provide you with a more personalized assessment, I'd like to know a bit about you. Could you share your name, age, and gender (if you're comfortable)?"
                 message_store.add_assistant_message(session_identifier, demo_question)
                 self.subscription_service.increment_usage(db, session_identifier)
@@ -922,7 +922,7 @@ This preliminary assessment is not a substitute for professional diagnosis and c
                 if state.phase == "gathering":
                     dimension = self._infer_dimension_from_context(state)
                     if dimension:
-                        assessment_trigger.mark_dimension_answered(session_identifier, dimension)
+                        assessment_trigger.mark_dimension_answered(session_identifier, dimension, chat_request.message)
                 
                 # Generate assessment (this takes time)
                 step_start = datetime.utcnow()
@@ -1004,7 +1004,7 @@ This preliminary assessment is not a substitute for professional diagnosis and c
             
             # Mark dimension as answered
             if state.phase == "gathering":
-                assessment_trigger.mark_dimension_answered(session_identifier, next_dimension)
+                assessment_trigger.mark_dimension_answered(session_identifier, next_dimension, chat_request.message)
             
             # Increment usage
             step_start = datetime.utcnow()
