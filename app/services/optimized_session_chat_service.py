@@ -781,7 +781,7 @@ This preliminary assessment is not a substitute for professional diagnosis and c
             
             step_start = datetime.utcnow()
             state = self.state_manager.get_state(session_identifier)
-            message_store = OptimizedMessageHistoryStore()
+            message_store = OptimizedMessageHistoryStore(db)
             logger.info(f"[PERF] Redis state/context fetch took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
             
             # 3. Save user message
@@ -791,11 +791,19 @@ This preliminary assessment is not a substitute for professional diagnosis and c
             step_start = datetime.utcnow()
             logger.info(f"[PERF] Calling Orchestrator agent...")
             
+            # Build state summary from existing state (no extra Redis call!)
+            state_summary = {
+                "phase": state.phase,
+                "questions_asked": state.questions_asked,
+                "dimensions_answered": len(state.dimensions_answered),
+                "has_demographics": bool(state.demographics)
+            }
+            
             classification = await orchestrator_agent.classify_and_respond(
                 user_message=chat_request.message,
                 session_id=session_identifier,
-                conversation_context=message_store.get_conversation_context(session_identifier),
-                state_summary=self._build_state_summary(state)
+                conversation_context=message_store.get_context_for_llm(session_identifier),
+                state_summary=state_summary
             )
             logger.info(f"[PERF] Orchestrator took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
             
@@ -961,6 +969,7 @@ This preliminary assessment is not a substitute for professional diagnosis and c
             
             question_result = await diagnostic_agent.generate_question(
                 session_id=session_identifier,
+                condition=condition,
                 dimension_needed=next_dimension,
                 context={
                     "last_answer": chat_request.message,
