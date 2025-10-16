@@ -159,6 +159,10 @@ class DiagnosticAgent:
             # Calculate latency
             latency = (datetime.utcnow() - start_time).total_seconds() * 1000
             
+            # Extract question (GPT-5 responses endpoint format)
+            logger.info(f"[DEBUG] GPT-5 response object: {type(response)}")
+            raw_question = response.output_text if hasattr(response, 'output_text') else str(response)
+            
             # Log response (GPT-5 responses endpoint doesn't have usage info)
             interaction_logger.log_response(
                 model_name=self.MODEL_NAME,
@@ -167,10 +171,6 @@ class DiagnosticAgent:
                 latency_ms=latency,
                 cost_estimate=0.01  # Rough estimate for GPT-5
             )
-            
-            # Extract question (GPT-5 responses endpoint format)
-            logger.info(f"[DEBUG] GPT-5 response object: {type(response)}")
-            raw_question = response.output_text if hasattr(response, 'output_text') else str(response)
             logger.info(f"[DEBUG] GPT-5 raw response: '{raw_question}'")
             logger.info(f"[DEBUG] GPT-5 response type: {type(raw_question)}, is None: {raw_question is None}")
             

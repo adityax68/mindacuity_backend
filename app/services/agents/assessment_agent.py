@@ -110,6 +110,9 @@ class AssessmentAgent:
             # Calculate latency
             latency = (datetime.utcnow() - start_time).total_seconds() * 1000
             
+            # Extract assessment report (GPT-5 responses endpoint format)
+            assessment_report = response.output_text if hasattr(response, 'output_text') else str(response)
+            
             # Log response (GPT-5 responses endpoint doesn't have usage info)
             interaction_logger.log_response(
                 model_name=self.MODEL_NAME,
@@ -118,9 +121,6 @@ class AssessmentAgent:
                 latency_ms=latency,
                 cost_estimate=0.05  # Rough estimate for GPT-5 assessment
             )
-            
-            # Extract assessment report (GPT-5 responses endpoint format)
-            assessment_report = response.output_text if hasattr(response, 'output_text') else str(response)
             assessment_report = assessment_report.strip()
             
             # Parse structured information from report
