@@ -315,3 +315,4 @@ class AssessmentTrigger:
 # Global instance
 assessment_trigger = AssessmentTrigger()
 
+

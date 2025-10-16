@@ -369,3 +369,4 @@ def handle_model_errors(model_name: str, operation: str = "inference"):
 # Global error handler instance
 error_handler = ModelErrorHandler()
 
+

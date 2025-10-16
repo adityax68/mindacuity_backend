@@ -23,7 +23,7 @@ class AssessmentAgent:
     """
     
     MODEL_NAME = "gpt-5"
-    MAX_TOKENS = 1500  # INCREASED: GPT-5 needs more tokens for comprehensive reports
+    MAX_TOKENS = 3000  # INCREASED: GPT-5 needs more tokens for comprehensive reports
     TEMPERATURE = 1.0  # GPT-5 only supports default temperature of 1.0
     
     def __init__(self):
@@ -81,14 +81,12 @@ class AssessmentAgent:
             
             # Make API call with error handling
             async def api_call():
-                response = await self.client.chat.completions.create(
+                # GPT-5 uses responses endpoint, not chat/completions
+                response = await self.client.responses.create(
                     model=self.MODEL_NAME,
-                    max_completion_tokens=self.MAX_TOKENS,  # GPT-5 uses max_completion_tokens
-                    temperature=self.TEMPERATURE,
-                    messages=[
-                        {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ]
+                    input=f"{self.system_prompt}\n\n{user_prompt}",
+                    reasoning={"effort": "low"},
+                    text={"verbosity": "medium"}
                 )
                 return response
             
@@ -112,21 +110,18 @@ class AssessmentAgent:
             # Calculate latency
             latency = (datetime.utcnow() - start_time).total_seconds() * 1000
             
-            # Log response
+            # Log response (GPT-5 responses endpoint doesn't have usage info)
             interaction_logger.log_response(
                 model_name=self.MODEL_NAME,
                 session_id=session_id,
-                completion_tokens=response.usage.completion_tokens,
+                completion_tokens=len(assessment_report) // 4,  # Rough estimate
                 latency_ms=latency,
-                cost_estimate=error_handler.calculate_cost(
-                    self.MODEL_NAME,
-                    response.usage.prompt_tokens,
-                    response.usage.completion_tokens
-                )
+                cost_estimate=0.05  # Rough estimate for GPT-5 assessment
             )
             
-            # Extract assessment report
-            assessment_report = response.choices[0].message.content.strip()
+            # Extract assessment report (GPT-5 responses endpoint format)
+            assessment_report = response.output_text if hasattr(response, 'output_text') else str(response)
+            assessment_report = assessment_report.strip()
             
             # Parse structured information from report
             structured_data = self._extract_structured_data(assessment_report, condition, answers)
@@ -136,8 +131,8 @@ class AssessmentAgent:
                 "report": assessment_report,
                 "structured": structured_data,
                 "usage": {
-                    "input_tokens": response.usage.prompt_tokens,
-                    "output_tokens": response.usage.completion_tokens,
+                    "input_tokens": len(user_prompt) // 4,  # Rough estimate
+                    "output_tokens": len(assessment_report) // 4,  # Rough estimate
                     "latency_ms": latency
                 }
             }
@@ -229,13 +224,12 @@ Key symptoms: {symptoms_text}
 Provide a compassionate, clear summary for the user."""
             
             async def api_call():
-                response = await self.client.chat.completions.create(
+                # GPT-5 uses responses endpoint, not chat/completions
+                response = await self.client.responses.create(
                     model=self.MODEL_NAME,
-                    max_completion_tokens=200,  # INCREASED: GPT-5 needs more tokens for summaries
-                    temperature=1.0,  # GPT-5 only supports default temperature of 1.0
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
+                    input=prompt,
+                    reasoning={"effort": "minimal"},
+                    text={"verbosity": "low"}
                 )
                 return response
             
@@ -247,7 +241,10 @@ Provide a compassionate, clear summary for the user."""
             )
             
             if result["success"]:
-                return result["data"].choices[0].message.content.strip()
+                response = result["data"]
+                # GPT-5 responses endpoint format
+                summary = response.output_text if hasattr(response, 'output_text') else str(response)
+                return summary.strip()
             else:
                 # Fallback summary
                 return f"Based on your responses, you're experiencing {severity} {condition}. Professional consultation is recommended."

@@ -23,7 +23,7 @@ class DiagnosticAgent:
     """
     
     MODEL_NAME = "gpt-5"
-    MAX_TOKENS = 300  # INCREASED: GPT-5 needs more tokens to generate questions
+    MAX_TOKENS = 1000  # INCREASED: GPT-5 needs more tokens to generate questions
     TEMPERATURE = 1.0  # GPT-5 only supports default temperature of 1.0
     
     def __init__(self):
@@ -121,14 +121,12 @@ class DiagnosticAgent:
             
             # Make API call with error handling
             async def api_call():
-                response = await self.client.chat.completions.create(
+                # GPT-5 uses responses endpoint, not chat/completions
+                response = await self.client.responses.create(
                     model=self.MODEL_NAME,
-                    max_completion_tokens=self.MAX_TOKENS,  # GPT-5 uses max_completion_tokens
-                    temperature=self.TEMPERATURE,
-                    messages=[
-                        {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ]
+                    input=f"{self.system_prompt}\n\n{user_prompt}",
+                    reasoning={"effort": "low"},
+                    text={"verbosity": "low"}
                 )
                 return response
             
@@ -161,22 +159,18 @@ class DiagnosticAgent:
             # Calculate latency
             latency = (datetime.utcnow() - start_time).total_seconds() * 1000
             
-            # Log response
+            # Log response (GPT-5 responses endpoint doesn't have usage info)
             interaction_logger.log_response(
                 model_name=self.MODEL_NAME,
                 session_id=session_id,
-                completion_tokens=response.usage.completion_tokens,
+                completion_tokens=len(raw_question) // 4,  # Rough estimate
                 latency_ms=latency,
-                cost_estimate=error_handler.calculate_cost(
-                    self.MODEL_NAME,
-                    response.usage.prompt_tokens,
-                    response.usage.completion_tokens
-                )
+                cost_estimate=0.01  # Rough estimate for GPT-5
             )
             
-            # Extract question
-            logger.info(f"[DEBUG] GPT-5 response object: choices={len(response.choices)}, finish_reason={response.choices[0].finish_reason if response.choices else 'N/A'}")
-            raw_question = response.choices[0].message.content
+            # Extract question (GPT-5 responses endpoint format)
+            logger.info(f"[DEBUG] GPT-5 response object: {type(response)}")
+            raw_question = response.output_text if hasattr(response, 'output_text') else str(response)
             logger.info(f"[DEBUG] GPT-5 raw response: '{raw_question}'")
             logger.info(f"[DEBUG] GPT-5 response type: {type(raw_question)}, is None: {raw_question is None}")
             
@@ -211,8 +205,8 @@ class DiagnosticAgent:
                 "dimension": dimension_needed,
                 "source": "generated",
                 "usage": {
-                    "input_tokens": response.usage.prompt_tokens,
-                    "output_tokens": response.usage.completion_tokens,
+                    "input_tokens": len(user_prompt) // 4,  # Rough estimate
+                    "output_tokens": len(raw_question) // 4,  # Rough estimate
                     "latency_ms": latency
                 }
             }
