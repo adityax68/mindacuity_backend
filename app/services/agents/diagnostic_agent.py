@@ -141,17 +141,20 @@ class DiagnosticAgent:
             
             if not result["success"]:
                 # Fallback to pre-written question
-                fallback = prompt_manager.get_condition_question(condition, dimension_needed)
-                if fallback:
-                    return {
-                        "success": True,
-                        "question": fallback,
-                        "dimension": dimension_needed,
-                        "source": "fallback",
-                        "error_details": result
-                    }
+                logger.warning(f"GPT-5 API call failed, using fallback for dimension: {dimension_needed}")
+                fallback = prompt_manager.get_general_question(dimension_needed)
                 
-                return result
+                if not fallback:
+                    fallback = f"Can you tell me more about {dimension_needed.replace('_', ' ')}?"
+                    logger.warning(f"No general question for dimension {dimension_needed}, using ultimate fallback")
+                
+                return {
+                    "success": True,
+                    "question": fallback,
+                    "dimension": dimension_needed,
+                    "source": "fallback_api_error",
+                    "error_details": result
+                }
             
             response = result["data"]
             
@@ -172,8 +175,10 @@ class DiagnosticAgent:
             )
             
             # Extract question
+            logger.info(f"[DEBUG] GPT-5 response object: choices={len(response.choices)}, finish_reason={response.choices[0].finish_reason if response.choices else 'N/A'}")
             raw_question = response.choices[0].message.content
             logger.info(f"[DEBUG] GPT-5 raw response: '{raw_question}'")
+            logger.info(f"[DEBUG] GPT-5 response type: {type(raw_question)}, is None: {raw_question is None}")
             
             question = raw_question.strip() if raw_question else ""
             logger.info(f"[DEBUG] After strip: '{question}'")
@@ -184,15 +189,21 @@ class DiagnosticAgent:
             
             # Safety check: If question is empty or just "?", use fallback
             if not question or question == "?" or len(question) < 5:
-                logger.warning(f"GPT-5 returned invalid question: '{question}', using fallback")
-                fallback = prompt_manager.get_condition_question(condition, dimension_needed)
-                if fallback:
-                    return {
-                        "success": True,
-                        "question": fallback,
-                        "dimension": dimension_needed,
-                        "source": "fallback_invalid_response"
-                    }
+                logger.warning(f"GPT-5 returned invalid question: '{question}', using fallback for dimension: {dimension_needed}")
+                fallback = prompt_manager.get_general_question(dimension_needed)
+                
+                if not fallback:
+                    # Ultimate fallback if no general question found
+                    fallback = f"Can you tell me more about {dimension_needed.replace('_', ' ')}?"
+                    logger.warning(f"No general question for dimension {dimension_needed}, using ultimate fallback")
+                
+                logger.info(f"[DEBUG] Using fallback question: '{fallback}'")
+                return {
+                    "success": True,
+                    "question": fallback,
+                    "dimension": dimension_needed,
+                    "source": "fallback_invalid_response"
+                }
             
             return {
                 "success": True,
@@ -210,19 +221,18 @@ class DiagnosticAgent:
             logger.error(f"Dynamic question generation error: {e}")
             
             # Fallback to pre-written
-            fallback = prompt_manager.get_condition_question(condition, dimension_needed)
-            if fallback:
-                return {
-                    "success": True,
-                    "question": fallback,
-                    "dimension": dimension_needed,
-                    "source": "fallback_on_error"
-                }
+            fallback = prompt_manager.get_general_question(dimension_needed)
+            
+            if not fallback:
+                fallback = f"Can you tell me more about {dimension_needed.replace('_', ' ')}?"
+                logger.warning(f"No general question for dimension {dimension_needed}, using ultimate fallback")
             
             return {
-                "success": False,
-                "error": "Question generation failed",
-                "backend_details": {"error": str(e)}
+                "success": True,
+                "question": fallback,
+                "dimension": dimension_needed,
+                "source": "fallback_on_exception",
+                "error_details": str(e)
             }
     
     def _build_question_prompt(
