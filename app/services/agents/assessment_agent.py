@@ -23,7 +23,7 @@ class AssessmentAgent:
     """
     
     MODEL_NAME = "gpt-5"
-    MAX_TOKENS = 1000  # Longer for comprehensive reports
+    MAX_TOKENS = 1500  # INCREASED: GPT-5 needs more tokens for comprehensive reports
     TEMPERATURE = 1.0  # GPT-5 only supports default temperature of 1.0
     
     def __init__(self):
@@ -229,14 +229,14 @@ Key symptoms: {symptoms_text}
 Provide a compassionate, clear summary for the user."""
             
             async def api_call():
-                response = await self.client.chat.completions.create(
-                    model=self.MODEL_NAME,
-                    max_completion_tokens=150,  # GPT-5 uses max_completion_tokens
-                    temperature=1.0,  # GPT-5 only supports default temperature of 1.0
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
-                )
+            response = await self.client.chat.completions.create(
+                model=self.MODEL_NAME,
+                max_completion_tokens=200,  # INCREASED: GPT-5 needs more tokens for summaries
+                temperature=1.0,  # GPT-5 only supports default temperature of 1.0
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
                 return response
             
             result = await error_handler.call_with_retry(

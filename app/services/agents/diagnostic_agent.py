@@ -23,7 +23,7 @@ class DiagnosticAgent:
     """
     
     MODEL_NAME = "gpt-5"
-    MAX_TOKENS = 150
+    MAX_TOKENS = 300  # INCREASED: GPT-5 needs more tokens to generate questions
     TEMPERATURE = 1.0  # GPT-5 only supports default temperature of 1.0
     
     def __init__(self):

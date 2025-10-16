@@ -330,19 +330,63 @@ class OptimizedSessionChatService:
                 )
             
             # 8. Continue diagnostic questioning (API Call #2)
-            # Track the answer
-            if classification["intent"] == "answering_question":
+            # Track the answer for ALL responses during diagnostic phase
+            if state.phase == "gathering":
                 # Extract dimension from last question context
                 last_assistant_message = message_store.get_last_assistant_message(session_identifier)
                 if last_assistant_message:
                     # Infer dimension from previous question
                     dimension = self._infer_dimension_from_context(state)
                     if dimension:
+                        logger.info(f"[DEBUG] Marking dimension '{dimension}' as answered for session {session_identifier}")
                         assessment_trigger.mark_dimension_answered(
                             session_identifier,
                             dimension,
                             chat_request.message
                         )
+                        # Refresh state after marking dimension
+                        state = self.state_manager.get_state(session_identifier)
+                        logger.info(f"[DEBUG] After marking dimension - questions_asked: {state.questions_asked}, dimensions_answered: {state.dimensions_answered}")
+            
+            # Check if we should trigger assessment now
+            should_trigger, trigger_reason = assessment_trigger.should_trigger_assessment(session_identifier)
+            logger.info(f"[DEBUG] Assessment trigger check: should_trigger={should_trigger}, reason={trigger_reason}")
+            
+            if should_trigger:
+                logger.info(f"[DEBUG] Triggering assessment for session {session_identifier}")
+                # Generate assessment
+                step_start = datetime.utcnow()
+                assessment_result = await assessment_agent.generate_assessment(
+                    session_id=session_identifier,
+                    context={
+                        "demographics": state.demographics,
+                        "answers_collected": state.answers_collected,
+                        "questions_asked": state.questions_asked,
+                        "condition_hypothesis": state.condition_hypothesis
+                    }
+                )
+                logger.info(f"[PERF] Assessment generation took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
+                
+                if assessment_result["success"]:
+                    response_message = assessment_result["assessment"]
+                    message_store.add_assistant_message(session_identifier, response_message)
+                    
+                    # Mark session as complete
+                    self.state_manager.set_phase(session_identifier, "complete")
+                    
+                    # INCREMENT USAGE BEFORE RETURNING!
+                    self.subscription_service.increment_usage(db, session_identifier)
+                    usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
+                    if usage_info.get("message_limit"):
+                        usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
+                    
+                    return self._create_success_response(
+                        session_identifier, response_message, usage_info
+                    )
+                else:
+                    logger.error(f"Assessment generation failed: {assessment_result.get('error')}")
+                    # Fallback to continue questioning
+                    pass
             
             # Generate next diagnostic question
             next_dimension = assessment_trigger.get_next_dimension_needed(session_identifier)
