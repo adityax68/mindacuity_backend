@@ -821,9 +821,9 @@ This preliminary assessment is not a substitute for professional diagnosis and c
             state_updates = {
                 "last_activity": datetime.utcnow().isoformat(),
                 "last_user_message": chat_request.message,
-                "questions_asked": state.get("questions_asked", 0),
-                "answers_collected": state.get("answers_collected", {}),
-                "condition_hypothesis": state.get("condition_hypothesis", []),
+                "questions_asked": state.questions_asked,
+                "answers_collected": state.answers_collected,
+                "condition_hypothesis": state.condition_hypothesis,
                 "risk_level": classification.get("risk_level", "low")
             }
             self.state_manager.update_state(session_identifier, state_updates)
@@ -858,7 +858,7 @@ This preliminary assessment is not a substitute for professional diagnosis and c
                 return
             
             # 8. Handle demographics and assessment logic
-            if state.get("phase") == "greeting":
+            if state.phase == "greeting":
                 # First message - send initial greeting
                 initial_greeting = prompt_manager.INITIAL_GREETING
                 message_store.add_assistant_message(session_identifier, initial_greeting)
@@ -873,24 +873,30 @@ This preliminary assessment is not a substitute for professional diagnosis and c
                 return
             
             # Check if user is responding to demographics
-            if self._is_demographic_response(chat_request.message, state):
-                demographics = self._extract_demographics(chat_request.message)
-                if demographics:
-                    self.state_manager.set_demographics(session_identifier, demographics)
-                    self.state_manager.set_phase(session_identifier, "gathering")
-                    
-                    # Send acknowledgment and start diagnostic questions
-                    ack_response = f"Thank you for sharing that, {demographics.get('name', 'there')}."
-                    message_store.add_assistant_message(session_identifier, ack_response)
-                    self.subscription_service.increment_usage(db, session_identifier)
-                    
-                    yield {
-                        'type': 'demographics_ack',
-                        'content': ack_response,
-                        'timestamp': datetime.utcnow().isoformat()
-                    }
-                    
-                    # Continue to diagnostic questions below
+            if self._is_demographic_response(message_store, session_identifier, state):
+                # Parse all demographics from one response
+                logger.info(f"[DEBUG] Parsing demographics from: '{chat_request.message}'")
+                self._save_all_demographics_from_response(session_identifier, chat_request.message, state)
+                
+                # Refresh state to confirm demographics were saved
+                state = self.state_manager.get_state(session_identifier)
+                logger.info(f"[DEBUG] After saving demographics: {state.demographics}")
+                
+                # Done with demographics, start diagnostic questions
+                self.state_manager.set_phase(session_identifier, "gathering")
+                
+                # Send acknowledgment and start diagnostic questions
+                ack_response = f"Thank you for sharing that, {state.demographics.get('name', 'there')}."
+                message_store.add_assistant_message(session_identifier, ack_response)
+                self.subscription_service.increment_usage(db, session_identifier)
+                
+                yield {
+                    'type': 'demographics_ack',
+                    'content': ack_response,
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+                
+                # Continue to diagnostic questions below
             
             # Check if we still need demographics
             if self._need_demographics(state):
@@ -913,7 +919,7 @@ This preliminary assessment is not a substitute for professional diagnosis and c
                 logger.info(f"[DEBUG] Triggering assessment for session {session_identifier}")
                 
                 # Mark dimension as answered if this was a response
-                if state.get("phase") == "gathering":
+                if state.phase == "gathering":
                     dimension = self._infer_dimension_from_context(state)
                     if dimension:
                         assessment_trigger.mark_dimension_answered(session_identifier, dimension)
@@ -997,7 +1003,7 @@ This preliminary assessment is not a substitute for professional diagnosis and c
             logger.info(f"[PERF] Save assistant message took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
             
             # Mark dimension as answered
-            if state.get("phase") == "gathering":
+            if state.phase == "gathering":
                 assessment_trigger.mark_dimension_answered(session_identifier, next_dimension)
             
             # Increment usage
