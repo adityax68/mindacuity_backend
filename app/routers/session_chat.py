@@ -1,6 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List
+import json
+import asyncio
 from app.database import get_db
 from app.schemas import (
     SessionChatMessageRequest, 
@@ -60,6 +63,57 @@ async def send_message(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process chat message: {str(e)}"
+        )
+
+@router.post("/send-stream")
+async def send_message_stream(
+    chat_request: SessionChatMessageRequest,
+    db: Session = Depends(get_db),
+    chat_service: SessionChatService = Depends(get_session_chat_service)
+):
+    """Send a chat message and get streaming AI response (empathy + question)"""
+    try:
+        if not chat_request.message or not chat_request.message.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message cannot be empty"
+            )
+        
+        async def generate_stream():
+            try:
+                # Process the chat message with streaming
+                async for chunk in chat_service.process_chat_message_stream(
+                    db=db,
+                    session_identifier=chat_request.session_identifier,
+                    chat_request=chat_request
+                ):
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+                # Send final completion signal
+                yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+                
+            except Exception as e:
+                # Send error in stream
+                error_chunk = {
+                    'type': 'error',
+                    'message': f"Failed to process chat message: {str(e)}"
+                }
+                yield f"data: {json.dumps(error_chunk)}\n\n"
+        
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Content-Type": "text/event-stream"
+            }
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to initialize streaming: {str(e)}"
         )
 
 @router.post("/subscribe", response_model=SubscriptionResponse)
