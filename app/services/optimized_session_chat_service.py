@@ -358,17 +358,15 @@ class OptimizedSessionChatService:
                 step_start = datetime.utcnow()
                 assessment_result = await assessment_agent.generate_assessment(
                     session_id=session_identifier,
-                    context={
-                        "demographics": state.demographics,
-                        "answers_collected": state.answers_collected,
-                        "questions_asked": state.questions_asked,
-                        "condition_hypothesis": state.condition_hypothesis
-                    }
+                    condition=state.condition_hypothesis[0] if state.condition_hypothesis else "general stress",
+                    answers=state.answers_collected,
+                    demographics=state.demographics,
+                    risk_level=state.risk_level
                 )
                 logger.info(f"[PERF] Assessment generation took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
                 
                 if assessment_result["success"]:
-                    response_message = assessment_result["assessment"]
+                    response_message = assessment_result["report"]
                     message_store.add_assistant_message(session_identifier, response_message)
                     
                     # Mark session as complete
@@ -385,8 +383,19 @@ class OptimizedSessionChatService:
                     )
                 else:
                     logger.error(f"Assessment generation failed: {assessment_result.get('error')}")
-                    # Fallback to continue questioning
-                    pass
+                    # Fallback response when assessment fails
+                    response_message = "I apologize, but I'm having trouble generating your assessment right now. Let me ask you a few more questions to better understand your situation."
+                    message_store.add_assistant_message(session_identifier, response_message)
+                    
+                    # INCREMENT USAGE FOR FALLBACK RESPONSE
+                    self.subscription_service.increment_usage(db, session_identifier)
+                    usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
+                    if usage_info.get("message_limit"):
+                        usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
+                    
+                    return self._create_success_response(
+                        session_identifier, response_message, usage_info
+                    )
             
             # Generate next diagnostic question
             next_dimension = assessment_trigger.get_next_dimension_needed(session_identifier)
