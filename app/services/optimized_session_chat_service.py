@@ -286,7 +286,7 @@ class OptimizedSessionChatService:
                     # Ask for all demographics in one message
                     demographic_question = prompt_manager.get_demographic_question("all")
                     response_message = self._build_response_with_empathy(
-                        classification["empathy_response"],
+                        classification.get("empathy_response", ""),
                         demographic_question
                     )
                     message_store.add_assistant_message(session_identifier, response_message)
@@ -313,7 +313,7 @@ class OptimizedSessionChatService:
                 )
                 
                 response_message = self._build_response_with_empathy(
-                    classification["empathy_response"],
+                    classification.get("empathy_response", ""),
                     assessment_result
                 )
                 message_store.add_assistant_message(session_identifier, response_message)
@@ -417,13 +417,13 @@ class OptimizedSessionChatService:
             
             if question_result["success"]:
                 response_message = self._build_response_with_empathy(
-                    classification["empathy_response"],
+                    classification.get("empathy_response", ""),
                     question_result["question"]
                 )
             else:
                 # Fallback question
                 response_message = self._build_response_with_empathy(
-                    classification["empathy_response"],
+                    classification.get("empathy_response", ""),
                     "Could you tell me more about how this is affecting your daily life?"
                 )
             
@@ -987,13 +987,13 @@ This preliminary assessment is not a substitute for professional diagnosis and c
             
             if question_result["success"]:
                 response_message = self._build_response_with_empathy(
-                    classification["empathy_response"],
+                    classification.get("empathy_response", ""),
                     question_result["question"]
                 )
             else:
                 # Fallback question
                 response_message = self._build_response_with_empathy(
-                    classification["empathy_response"],
+                    classification.get("empathy_response", ""),
                     "Could you tell me more about how this is affecting your daily life?"
                 )
             
