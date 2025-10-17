@@ -389,8 +389,10 @@ YOUR ROLE:
 - Cover mental, physical, and social symptoms systematically
 - Adapt questions based on user's specific concerns
 - If user denies information: Ask the next most relevant question
+- If user denies or says "none", "no", "not really": Ask about other specific symptoms or concerns
 - Stay focused on assessment, not therapy
 - Be empathetic and understanding when appropriate
+- ALWAYS respond to every user message - never leave them without a response
 
 **OFF-TOPIC HANDLING:**
 - If user goes off-topic: "I'm not able to answer that off-topic question. Do you want to continue our conversation about the concern you mentioned?"
@@ -426,6 +428,8 @@ YOUR ROLE:
 ✅ Be empathetic and understanding when appropriate
 ✅ Respond in pure, grammatically correct English paragraphs
 ✅ Use natural, conversational language
+✅ ALWAYS respond to every user message - never leave them without a response
+✅ If user denies, says "none", "no", "not really" or similar, ask about other specific symptoms or concerns
 
 **CONVERSATION EXAMPLES:**
 
@@ -444,6 +448,14 @@ You: "I'm not able to answer that off-topic question. Do you want to continue ou
 User: "I don't want to talk about that"
 You: "I understand. Let me ask about something else - how has your sleep been affected by these feelings?"
 
+**General Denial Responses:**
+User: "no" or "none" or "not really" or "I don't have that"
+You: "I understand. Let me ask about something else - can you tell me more about what's making you feel unwell? What specific symptoms or concerns are you experiencing?"
+
+**When User Denies or Says "None":**
+User: "none of these" or "none" or "no" or "not really"
+You: "I understand. Let me ask about something else - can you tell me more about what's making you feel unwell? What specific symptoms or concerns are you experiencing?"
+
 **Empathetic Response Example:**
 User: "I've been feeling really down and hopeless"
 You: "I can hear that you're going through a difficult time, and I want you to know that what you're feeling is valid. Can you tell me more about when these feelings of hopelessness started?"
@@ -455,12 +467,16 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
 
     async def process_chat_message(self, db: Session, session_identifier: str, chat_request: SessionChatMessageRequest) -> SessionChatResponse:
         """Process a chat message and return AI response"""
+        logger.info(f"🚀 PROCESSING MESSAGE - Session: {session_identifier}, Message: '{chat_request.message[:50]}...'")
         try:
             # Check usage limit (don't allow orphaned reuse for new sessions - always create fresh free plan)
             usage_info = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=False)
             
             # Get session state for dynamic prompt
             session_state = self._get_session_state(db, session_identifier)
+            
+            logger.info(f"📊 SESSION STATE - Session: {session_identifier}, Messages: {session_state['message_count']}, GPT Responses: {session_state['gpt_response_count']}, Greeting Sent: {session_state['greeting_sent']}")
+            logger.info(f"📊 USAGE INFO - Can Send: {usage_info['can_send']}, Used: {usage_info['messages_used']}, Limit: {usage_info['message_limit']}, Plan: {usage_info['plan_type']}")
             
             if not usage_info["can_send"]:
                 if usage_info.get("plan_type") == "free" and usage_info["messages_used"] >= usage_info["message_limit"]:
@@ -516,15 +532,40 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
             
             # Get AI response using LangChain (this handles context and message saving automatically)
             try:
+                logger.info(f"🤖 GPT API CALL STARTED - Session: {session_identifier}, Message: '{chat_request.message[:50]}...'")
+                start_time = datetime.now()
+                
                 response = await runnable_with_history.ainvoke(
                     {"input": chat_request.message},
                     config={"configurable": {"session_id": session_identifier}}
                 )
                 
+                end_time = datetime.now()
+                response_time = (end_time - start_time).total_seconds()
+                
                 ai_message_content = response.content
                 
+                logger.info(f"✅ GPT API SUCCESS - Session: {session_identifier}, Response time: {response_time:.2f}s, Response length: {len(ai_message_content)} chars")
+                logger.info(f"📝 GPT Response: '{ai_message_content[:100]}...'")
+                
             except Exception as ai_error:
-                logger.error(f"LangChain/OpenAI API error: {ai_error}")
+                end_time = datetime.now()
+                response_time = (end_time - start_time).total_seconds()
+                
+                logger.error(f"❌ GPT API ERROR - Session: {session_identifier}, Error: {ai_error}, Response time: {response_time:.2f}s")
+                logger.error(f"🔍 Error type: {type(ai_error).__name__}")
+                logger.error(f"🔍 Error details: {str(ai_error)}")
+                
+                # Check for specific error types
+                if "rate_limit" in str(ai_error).lower():
+                    logger.error("🚨 RATE LIMIT DETECTED - OpenAI API rate limit exceeded")
+                elif "token" in str(ai_error).lower():
+                    logger.error("🚨 TOKEN LIMIT DETECTED - Token limit exceeded")
+                elif "timeout" in str(ai_error).lower():
+                    logger.error("🚨 TIMEOUT DETECTED - Request timed out")
+                elif "authentication" in str(ai_error).lower():
+                    logger.error("🚨 AUTH ERROR - OpenAI API key issue")
+                
                 # Fallback response if AI service fails
                 ai_message_content = "I'm sorry, I'm having trouble processing your message right now. Please try again in a moment."
             
@@ -533,6 +574,9 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
             
             # Get updated usage info
             updated_usage = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=False)
+            
+            logger.info(f"✅ RESPONSE SENT - Session: {session_identifier}, Final message length: {len(ai_message_content)} chars")
+            logger.info(f"📊 FINAL USAGE - Used: {updated_usage['messages_used']}, Limit: {updated_usage['message_limit']}, Plan: {updated_usage['plan_type']}")
             
             return SessionChatResponse(
                 message=ai_message_content,
@@ -544,16 +588,21 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
             )
             
         except Exception as e:
-            logger.error(f"Failed to process chat message: {e}")
+            logger.error(f"💥 CRITICAL ERROR - Session: {session_identifier}, Error: {e}")
+            logger.error(f"🔍 Error type: {type(e).__name__}")
+            logger.error(f"🔍 Error details: {str(e)}")
             
             # CRITICAL: Rollback the transaction to prevent invalid transaction state
             try:
                 db.rollback()
+                logger.info(f"🔄 Database rollback successful for session: {session_identifier}")
             except Exception as rollback_error:
-                logger.error(f"Failed to rollback transaction: {rollback_error}")
+                logger.error(f"💥 ROLLBACK FAILED - Session: {session_identifier}, Rollback error: {rollback_error}")
             
             # Get current usage info without incrementing (since we failed)
             current_usage = self.subscription_service.check_usage_limit(db, session_identifier, allow_orphaned_reuse=False)
+            
+            logger.error(f"📊 ERROR USAGE INFO - Session: {session_identifier}, Used: {current_usage.get('messages_used', 0)}, Limit: {current_usage.get('message_limit', None)}")
             
             return SessionChatResponse(
                 message="I'm sorry, I encountered an error. Please try again.",
