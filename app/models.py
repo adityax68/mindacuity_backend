@@ -256,3 +256,122 @@ class AssessmentReport(Base):
     
     # Relationships
     conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
+
+class TestDefinition(Base):
+    __tablename__ = "test_definitions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    test_code = Column(String(50), unique=True, nullable=False)
+    test_name = Column(String(100), nullable=False)
+    test_category = Column(String(50), nullable=False)
+    description = Column(Text)
+    total_questions = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class TestQuestion(Base):
+    __tablename__ = "test_questions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    test_id = Column(Integer, ForeignKey("test_definitions.id"), nullable=False)
+    question_text = Column(Text, nullable=False)
+    question_order = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class TestQuestionOption(Base):
+    __tablename__ = "test_question_options"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    question_id = Column(Integer, ForeignKey("test_questions.id"), nullable=False)
+    option_text = Column(String(500), nullable=False)
+    option_value = Column(Integer, nullable=False)
+    option_order = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class TestScoringRange(Base):
+    __tablename__ = "test_scoring_ranges"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    test_id = Column(Integer, ForeignKey("test_definitions.id"), nullable=False)
+    min_score = Column(Integer, nullable=False)
+    max_score = Column(Integer, nullable=False)
+    severity_level = Column(String(50), nullable=False)
+    interpretation = Column(Text, nullable=False)
+    recommendations = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Organisation(Base):
+    __tablename__ = "organisations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(String(5), unique=True, index=True, nullable=False)
+    org_name = Column(String, nullable=False)
+    hr_email = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ConversationUsage(Base):
+    __tablename__ = "conversation_usage"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    messages_used = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class Research(Base):
+    __tablename__ = "researches"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    author = Column(String, nullable=False)
+    published_date = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class EmailLog(Base):
+    __tablename__ = "email_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    email = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    status = Column(String, nullable=False)  # sent, failed, bounced
+    sent_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class EmailUnsubscribe(Base):
+    __tablename__ = "email_unsubscribes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    reason = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class EmailTemplate(Base):
+    __tablename__ = "email_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    template_name = Column(String, unique=True, nullable=False)
+    subject = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class EmailBounce(Base):
+    __tablename__ = "email_bounces"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False)
+    bounce_type = Column(String, nullable=False)
+    bounce_subtype = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class EmailComplaint(Base):
+    __tablename__ = "email_complaints"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False)
+    complaint_type = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
