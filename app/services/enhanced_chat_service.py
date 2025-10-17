@@ -140,7 +140,8 @@ IMPORTANT GUIDELINES:
 - Emphasize need for professional evaluation for official diagnosis
 
 DISCLAIMER TO INCLUDE:
-"This is a preliminary assessment based on a brief conversation and should not replace a comprehensive evaluation by a licensed mental health professional. Only a qualified clinician can provide an official diagnosis and treatment plan.""""
+"This is a preliminary assessment based on a brief conversation and should not replace a comprehensive evaluation by a licensed mental health professional. Only a qualified clinician can provide an official diagnosis and treatment plan."
+"""
 
     @log_performance("process_chat_message")
     async def process_chat_message(self, db: Session, session_identifier: str, chat_request: SessionChatMessageRequest) -> SessionChatResponse:
