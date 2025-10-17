@@ -416,6 +416,22 @@ DISCLAIMER TO INCLUDE:
             {"role": msg.role, "content": msg.content}
             for msg in messages
         ]
+    
+    def get_conversation_messages(self, db: Session, session_identifier: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get conversation messages for API response"""
+        messages = db.query(Message).filter(
+            Message.session_identifier == session_identifier
+        ).order_by(Message.created_at.asc()).limit(limit).all()
+        
+        return [
+            {
+                "id": msg.id,
+                "role": msg.role,
+                "content": msg.content,
+                "timestamp": msg.created_at.isoformat()
+            }
+            for msg in messages
+        ]
 
     async def _get_streaming_openai_response(self, user_message: str, conversation_history: List[Dict]) -> str:
         """Get streaming response from OpenAI"""

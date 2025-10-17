@@ -270,7 +270,7 @@ async def link_session_to_subscription(
 async def get_conversation(
     session_identifier: str,
     db: Session = Depends(get_db),
-    chat_service: SessionChatService = Depends(get_session_chat_service),
+    chat_service: EnhancedChatService = Depends(get_enhanced_chat_service),
     subscription_service: SubscriptionService = Depends(get_subscription_service)
 ):
     """Get conversation messages and usage info for a session"""
