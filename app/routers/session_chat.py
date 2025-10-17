@@ -12,21 +12,22 @@ from app.schemas import (
     SessionConversationResponse,
     User
 )
-from app.services.session_chat_service import SessionChatService
+from app.services.enhanced_chat_service import EnhancedChatService
 from app.services.subscription_service import SubscriptionService
 from app.auth import get_current_active_user
 from app.models import UserFreeService, Subscription
+from app.utils.logger import api_logger, log_api_performance
 
 router = APIRouter(prefix="/session-chat", tags=["Session Chat"])
 
-def get_session_chat_service() -> SessionChatService:
-    """Dependency to get session chat service instance"""
+def get_enhanced_chat_service() -> EnhancedChatService:
+    """Dependency to get enhanced chat service instance"""
     try:
-        return SessionChatService()
+        return EnhancedChatService()
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to initialize session chat service: {str(e)}"
+            detail=f"Failed to initialize enhanced chat service: {str(e)}"
         )
 
 def get_subscription_service() -> SubscriptionService:
@@ -34,13 +35,20 @@ def get_subscription_service() -> SubscriptionService:
     return SubscriptionService()
 
 @router.post("/send", response_model=SessionChatResponse)
+@log_api_performance("send_message")
 async def send_message(
     chat_request: SessionChatMessageRequest,
     db: Session = Depends(get_db),
-    chat_service: SessionChatService = Depends(get_session_chat_service)
+    chat_service: EnhancedChatService = Depends(get_enhanced_chat_service)
 ):
     """Send a chat message and get AI response"""
     try:
+        api_logger.info(
+            "API request: send_message",
+            session_id=chat_request.session_identifier,
+            message_length=len(chat_request.message)
+        )
+        
         if not chat_request.message or not chat_request.message.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -54,9 +62,20 @@ async def send_message(
             chat_request=chat_request
         )
         
+        api_logger.info(
+            "API response: send_message success",
+            session_id=chat_request.session_identifier,
+            response_length=len(response.message)
+        )
+        
         return response
         
     except Exception as e:
+        api_logger.error(
+            operation="send_message",
+            error=e,
+            session_id=chat_request.session_identifier
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process chat message: {str(e)}"
@@ -304,6 +323,64 @@ async def get_usage_info(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get usage info: {str(e)}"
+        )
+
+@router.post("/stream")
+async def stream_message(
+    chat_request: SessionChatMessageRequest,
+    db: Session = Depends(get_db),
+    chat_service: EnhancedChatService = Depends(get_enhanced_chat_service)
+):
+    """Stream AI response for better UX"""
+    from fastapi.responses import StreamingResponse
+    import asyncio
+    
+    async def generate():
+        async for chunk in chat_service.get_streaming_response(db, chat_request.session_identifier, chat_request):
+            yield f"data: {chunk}\n\n"
+            await asyncio.sleep(0.01)  # Small delay for better streaming effect
+        yield "data: [DONE]\n\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/plain",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )
+
+@router.post("/generate-assessment")
+@log_api_performance("generate_assessment")
+async def generate_assessment(
+    session_identifier: str,
+    db: Session = Depends(get_db),
+    chat_service: EnhancedChatService = Depends(get_enhanced_chat_service)
+):
+    """Generate assessment using Anthropic"""
+    try:
+        api_logger.info(
+            "API request: generate_assessment",
+            session_id=session_identifier
+        )
+        
+        result = await chat_service.generate_assessment(db, session_identifier)
+        
+        api_logger.info(
+            "API response: generate_assessment success",
+            session_id=session_identifier,
+            assessment_id=result.get("assessment_id"),
+            new_session_id=result.get("new_session_id")
+        )
+        
+        return result
+        
+    except Exception as e:
+        api_logger.error(
+            operation="generate_assessment",
+            error=e,
+            session_id=session_identifier
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate assessment: {str(e)}"
         )
 
 

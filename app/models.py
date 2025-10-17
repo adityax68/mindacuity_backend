@@ -57,6 +57,26 @@ class User(Base):
     last_reset_attempt = Column(DateTime(timezone=True), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # NEW: Relationships
@@ -76,6 +96,26 @@ class Role(Base):
     description = Column(String)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     
     # NEW: Many-to-many with privileges
     privileges = relationship("Privilege", secondary=role_privileges, back_populates="roles")
@@ -89,6 +129,26 @@ class Privilege(Base):
     category = Column(String)  # e.g., "assessment", "user_management", "system"
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     
     # NEW: Relationships
     users = relationship("User", secondary=user_privileges, back_populates="privileges")
@@ -106,6 +166,26 @@ class TestDefinition(Base):
     total_questions = Column(Integer, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
@@ -122,6 +202,26 @@ class TestQuestion(Base):
     question_text = Column(Text, nullable=False)
     is_reverse_scored = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     
     # Relationships
     test_definition = relationship("TestDefinition", back_populates="questions")
@@ -138,6 +238,26 @@ class TestQuestionOption(Base):
     weight = Column(Numeric(3,2), default=1.0)
     display_order = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     
     # Relationships
     test_definition = relationship("TestDefinition")
@@ -157,6 +277,26 @@ class TestScoringRange(Base):
     color_code = Column(String(7))
     priority = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     
     # Relationships
     test_definition = relationship("TestDefinition", back_populates="scoring_ranges")
@@ -184,6 +324,26 @@ class ClinicalAssessment(Base):
     severity_label = Column(String(100), nullable=True)  # Human-readable severity
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     
     # Relationships
     user = relationship("User", back_populates="assessments")
@@ -202,6 +362,26 @@ class Complaint(Base):
     status = Column(String, default="pending")  # pending, resolved
     hr_notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships
@@ -218,6 +398,26 @@ class RateLimit(Base):
     message_count = Column(Integer, default=0)
     window_start = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     
     # Relationship
     user = relationship("User", back_populates="rate_limits")
@@ -230,6 +430,26 @@ class Organisation(Base):
     org_name = Column(String, nullable=False)
     hr_email = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class Employee(Base):
@@ -247,11 +467,7 @@ class Employee(Base):
     hire_date = Column(DateTime(timezone=True))
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # Relationship
-    user = relationship("User", back_populates="employee")
-    complaints = relationship("Complaint", back_populates="employee")
+
 
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
@@ -262,6 +478,26 @@ class RefreshToken(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     is_revoked = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationship
@@ -276,6 +512,26 @@ class Conversation(Base):
     session_identifier = Column(String(255), unique=True, nullable=False, index=True)
     title = Column(String(255), default="New Conversation")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
@@ -293,6 +549,26 @@ class Message(Base):
     content = Column(Text, nullable=False)
     encrypted_content = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
@@ -307,6 +583,26 @@ class Subscription(Base):
     message_limit = Column(Integer, nullable=True)  # NULL for unlimited
     price = Column(Numeric(10, 2), default=0.00)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     expires_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
     
@@ -322,6 +618,26 @@ class ConversationUsage(Base):
     messages_used = Column(Integer, default=0)
     last_used_at = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     
     # Relationships
     conversation = relationship("Conversation", back_populates="usage_records")
@@ -355,6 +671,26 @@ class ChatAttachment(Base):
     is_processed = Column(Boolean, default=False)
     processed_content = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     expires_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
@@ -370,6 +706,26 @@ class Research(Base):
     source_url = Column(String(500), nullable=False)  # External source URL
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 # Email System Models
@@ -402,6 +758,26 @@ class EmailLog(Base):
     template_data = Column(JSON, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class EmailUnsubscribe(Base):
@@ -437,6 +813,26 @@ class EmailTemplate(Base):
     last_used_at = Column(DateTime(timezone=True), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class EmailBounce(Base):
@@ -460,6 +856,26 @@ class EmailBounce(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
+
 class EmailComplaint(Base):
     __tablename__ = "email_complaints"
     
@@ -478,3 +894,23 @@ class EmailComplaint(Base):
     processed_at = Column(DateTime(timezone=True), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AssessmentReport(Base):
+    __tablename__ = "assessment_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_identifier = Column(String(255), nullable=False, index=True)
+    conditions = Column(JSON, nullable=False)  # Array of conditions
+    symptoms = Column(JSON, nullable=False)   # Array of key symptoms
+    severity_level = Column(String(50), nullable=False)  # mild/moderate/severe
+    report_content = Column(Text, nullable=False)
+    conversation_quality = Column(String(50), nullable=True)  # excellent/good/fair/limited
+    risk_factors = Column(JSON, nullable=True)  # Array of risk factors
+    protective_factors = Column(JSON, nullable=True)  # Array of protective factors
+    urgency_level = Column(String(50), nullable=True)  # low/moderate/high/critical
+    recommendations = Column(JSON, nullable=True)  # Array of recommendations
+    limitations = Column(Text, nullable=True)  # Assessment limitations
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    conversation = relationship("Conversation", foreign_keys=[session_identifier], primaryjoin="AssessmentReport.session_identifier == Conversation.session_identifier")
