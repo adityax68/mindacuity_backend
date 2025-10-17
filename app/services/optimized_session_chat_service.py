@@ -286,7 +286,7 @@ class OptimizedSessionChatService:
                     # Ask for all demographics in one message
                     demographic_question = prompt_manager.get_demographic_question("all")
                     response_message = self._build_response_with_empathy(
-                        classification.get("empathy_response", ""),
+                        classification["empathy_response"],
                         demographic_question
                     )
                     message_store.add_assistant_message(session_identifier, response_message)
@@ -313,7 +313,7 @@ class OptimizedSessionChatService:
                 )
                 
                 response_message = self._build_response_with_empathy(
-                    classification.get("empathy_response", ""),
+                    classification["empathy_response"],
                     assessment_result
                 )
                 message_store.add_assistant_message(session_identifier, response_message)
@@ -417,13 +417,13 @@ class OptimizedSessionChatService:
             
             if question_result["success"]:
                 response_message = self._build_response_with_empathy(
-                    classification.get("empathy_response", ""),
+                    classification["empathy_response"],
                     question_result["question"]
                 )
             else:
                 # Fallback question
                 response_message = self._build_response_with_empathy(
-                    classification.get("empathy_response", ""),
+                    classification["empathy_response"],
                     "Could you tell me more about how this is affecting your daily life?"
                 )
             
@@ -744,292 +744,4 @@ This preliminary assessment is not a substitute for professional diagnosis and c
             except:
                 pass
             return []
-
-    async def process_chat_message_stream(
-        self,
-        db: Session,
-        session_identifier: str,
-        chat_request: SessionChatMessageRequest
-    ):
-        """
-        Process chat message with streaming response
-        Yields empathy response immediately, then question/report when ready
-        """
-        try:
-            request_start = datetime.utcnow()
-            logger.info(f"[PERF] === Starting STREAMING request for session {session_identifier} ===")
-            
-            # 1. Usage check (same as before)
-            step_start = datetime.utcnow()
-            usage_info = self.subscription_service.check_usage_limit(db, session_identifier)
-            logger.info(f"[PERF] Usage check took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
-            
-            if not usage_info.get("can_send", False):
-                yield {
-                    'type': 'error',
-                    'message': 'Message limit reached. Please upgrade your plan.',
-                    'usage_info': usage_info
-                }
-                return
-            
-            # 2. Get conversation and state (same as before)
-            step_start = datetime.utcnow()
-            conversation = db.query(Conversation).filter(
-                Conversation.session_identifier == session_identifier
-            ).first()
-            logger.info(f"[PERF] DB conversation lookup took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
-            
-            step_start = datetime.utcnow()
-            state = self.state_manager.get_state(session_identifier)
-            message_store = OptimizedMessageHistoryStore(db)
-            logger.info(f"[PERF] Redis state/context fetch took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
-            
-            # 3. Save user message
-            message_store.add_user_message(session_identifier, chat_request.message)
-            
-            # 4. Call Orchestrator (Claude) - FAST RESPONSE
-            step_start = datetime.utcnow()
-            logger.info(f"[PERF] Calling Orchestrator agent...")
-            
-            # Build state summary from existing state (no extra Redis call!)
-            state_summary = {
-                "phase": state.phase,
-                "questions_asked": state.questions_asked,
-                "dimensions_answered": len(state.dimensions_answered),
-                "has_demographics": bool(state.demographics)
-            }
-            
-            classification = await orchestrator_agent.classify_and_respond(
-                user_message=chat_request.message,
-                session_id=session_identifier,
-                conversation_context=message_store.get_context_for_llm(session_identifier),
-                state_summary=state_summary
-            )
-            logger.info(f"[PERF] Orchestrator took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
-            
-            # 5. STREAM EMPATHY RESPONSE IMMEDIATELY
-            empathy_response = classification.get("empathy_response", "")
-            if empathy_response:
-                yield {
-                    'type': 'empathy',
-                    'content': empathy_response,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-            
-            # 6. Update state (batched)
-            step_start = datetime.utcnow()
-            state_updates = {
-                "last_activity": datetime.utcnow().isoformat(),
-                "last_user_message": chat_request.message,
-                "questions_asked": state.questions_asked,
-                "answers_collected": state.answers_collected,
-                "condition_hypothesis": state.condition_hypothesis,
-                "risk_level": classification.get("risk_level", "low")
-            }
-            self.state_manager.update_state(session_identifier, state_updates)
-            logger.info(f"[PERF] Batched state update took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
-            
-            # 7. Handle different conversation phases
-            if classification.get("intent") == "crisis":
-                # Crisis response - immediate
-                crisis_response = "I'm concerned about your safety. Please contact emergency services immediately: 988 (Suicide & Crisis Lifeline) or 911. You're not alone, and there are people who want to help."
-                message_store.add_assistant_message(session_identifier, crisis_response)
-                self.state_manager.set_phase(session_identifier, "complete")
-                self.subscription_service.increment_usage(db, session_identifier)
-                
-                yield {
-                    'type': 'crisis',
-                    'content': crisis_response,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-                return
-                
-            elif classification.get("intent") == "off_topic":
-                # Off-topic response - immediate
-                off_topic_response = "I'm specialized in mental health assessments and can only help with concerns related to anxiety, depression, stress, and similar conditions. If you're experiencing any mental health challenges, I'm here to help assess them."
-                message_store.add_assistant_message(session_identifier, off_topic_response)
-                self.subscription_service.increment_usage(db, session_identifier)
-                
-                yield {
-                    'type': 'off_topic',
-                    'content': off_topic_response,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-                return
-            
-            # 8. Handle demographics and assessment logic
-            if state.phase == "greeting":
-                # First message - send initial greeting
-                initial_greeting = prompt_manager.INITIAL_GREETING
-                message_store.add_assistant_message(session_identifier, initial_greeting)
-                self.state_manager.set_phase(session_identifier, "demographics")
-                self.subscription_service.increment_usage(db, session_identifier)
-                
-                yield {
-                    'type': 'greeting',
-                    'content': initial_greeting,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-                return
-            
-            # Check if user is responding to demographics
-            if self._is_demographic_response(message_store, session_identifier, state):
-                # Parse all demographics from one response
-                logger.info(f"[DEBUG] Parsing demographics from: '{chat_request.message}'")
-                self._save_all_demographics_from_response(session_identifier, chat_request.message, state)
-                
-                # Refresh state to confirm demographics were saved
-                state = self.state_manager.get_state(session_identifier)
-                logger.info(f"[DEBUG] After saving demographics: {state.demographics}")
-                
-                # Done with demographics, start diagnostic questions
-                self.state_manager.set_phase(session_identifier, "gathering")
-                
-                # Send acknowledgment and start diagnostic questions
-                ack_response = f"Thank you for sharing that, {state.demographics.get('name', 'there')}."
-                message_store.add_assistant_message(session_identifier, ack_response)
-                self.subscription_service.increment_usage(db, session_identifier)
-                
-                yield {
-                    'type': 'demographics_ack',
-                    'content': ack_response,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-                
-                # Continue to diagnostic questions below
-            
-            # Check if we still need demographics
-            if self._need_demographics(state, classification):
-                demo_question = "To provide you with a more personalized assessment, I'd like to know a bit about you. Could you share your name, age, and gender (if you're comfortable)?"
-                message_store.add_assistant_message(session_identifier, demo_question)
-                self.subscription_service.increment_usage(db, session_identifier)
-                
-                yield {
-                    'type': 'demographics_question',
-                    'content': demo_question,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-                return
-            
-            # 9. Check if we should trigger assessment
-            should_assess, reason = assessment_trigger.should_trigger_assessment(session_identifier)
-            
-            if should_assess:
-                # ASSESSMENT PHASE - Generate comprehensive report
-                logger.info(f"[DEBUG] Triggering assessment for session {session_identifier}")
-                
-                # Mark dimension as answered if this was a response
-                if state.phase == "gathering":
-                    dimension = self._infer_dimension_from_context(state)
-                    if dimension:
-                        assessment_trigger.mark_dimension_answered(session_identifier, dimension, chat_request.message)
-                
-                # Generate assessment (this takes time)
-                step_start = datetime.utcnow()
-                assessment_result = await assessment_agent.generate_assessment(
-                    session_id=session_identifier,
-                    condition=state.condition_hypothesis[0] if state.condition_hypothesis else "general stress",
-                    answers=state.answers_collected,
-                    demographics=state.demographics,
-                    risk_level=state.risk_level
-                )
-                logger.info(f"[PERF] Assessment generation took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
-                
-                if assessment_result["success"]:
-                    response_message = assessment_result["report"]
-                    message_store.add_assistant_message(session_identifier, response_message)
-                    self.state_manager.set_phase(session_identifier, "complete")
-                    
-                    # INCREMENT USAGE
-                    self.subscription_service.increment_usage(db, session_identifier)
-                    usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
-                    if usage_info.get("message_limit"):
-                        usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
-                    
-                    yield {
-                        'type': 'assessment',
-                        'content': response_message,
-                        'timestamp': datetime.utcnow().isoformat(),
-                        'usage_info': usage_info
-                    }
-                    return
-                else:
-                    # Assessment failed - fallback
-                    fallback_response = "I apologize, but I'm having trouble generating your assessment right now. Let me ask you a few more questions to better understand your situation."
-                    message_store.add_assistant_message(session_identifier, fallback_response)
-                    self.subscription_service.increment_usage(db, session_identifier)
-                    
-                    yield {
-                        'type': 'assessment_error',
-                        'content': fallback_response,
-                        'timestamp': datetime.utcnow().isoformat()
-                    }
-                    return
-            
-            # 10. Generate next diagnostic question (this takes time)
-            next_dimension = assessment_trigger.get_next_dimension_needed(session_identifier)
-            condition = state.condition_hypothesis[0] if state.condition_hypothesis else "general"
-            
-            step_start = datetime.utcnow()
-            logger.info(f"[PERF] Calling Diagnostic agent for dimension: {next_dimension}...")
-            
-            question_result = await diagnostic_agent.generate_question(
-                session_id=session_identifier,
-                condition=condition,
-                dimension_needed=next_dimension,
-                context={
-                    "last_answer": chat_request.message,
-                    "questions_asked": state.questions_asked,
-                    "answers_collected": state.answers_collected
-                }
-            )
-            logger.info(f"[PERF] Diagnostic agent took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
-            
-            if question_result["success"]:
-                response_message = self._build_response_with_empathy(
-                    classification.get("empathy_response", ""),
-                    question_result["question"]
-                )
-            else:
-                # Fallback question
-                response_message = self._build_response_with_empathy(
-                    classification.get("empathy_response", ""),
-                    "Could you tell me more about how this is affecting your daily life?"
-                )
-            
-            # Save assistant response
-            step_start = datetime.utcnow()
-            message_store.add_assistant_message(session_identifier, response_message)
-            logger.info(f"[PERF] Save assistant message took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
-            
-            # Mark dimension as answered
-            if state.phase == "gathering":
-                assessment_trigger.mark_dimension_answered(session_identifier, next_dimension, chat_request.message)
-            
-            # Increment usage
-            step_start = datetime.utcnow()
-            self.subscription_service.increment_usage(db, session_identifier)
-            usage_info["messages_used"] = usage_info.get("messages_used", 0) + 1
-            if usage_info.get("message_limit"):
-                usage_info["can_send"] = usage_info["messages_used"] < usage_info["message_limit"]
-            logger.info(f"[PERF] DB usage increment took {(datetime.utcnow() - step_start).total_seconds():.3f}s")
-            
-            total_duration = (datetime.utcnow() - request_start).total_seconds()
-            logger.info(f"[PERF] === STREAMING REQUEST COMPLETED in {total_duration:.3f}s for session {session_identifier} ===")
-            
-            # STREAM THE FINAL QUESTION
-            yield {
-                'type': 'question',
-                'content': response_message,
-                'timestamp': datetime.utcnow().isoformat(),
-                'usage_info': usage_info
-            }
-            
-        except Exception as e:
-            logger.error(f"Error processing streaming chat message for {session_identifier}: {e}")
-            yield {
-                'type': 'error',
-                'message': f"Failed to process message: {str(e)}",
-                'timestamp': datetime.utcnow().isoformat()
-            }
 
