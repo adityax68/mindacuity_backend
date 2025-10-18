@@ -9,7 +9,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/assessment", tags=["assessment"])
+router = APIRouter(prefix="/assessment", tags=["assessment"])
 
 class AssessmentRequest(BaseModel):
     session_identifier: str
