@@ -298,19 +298,16 @@ DO NOT:
     def _setup_langchain_components(self):
         """Setup LangChain components for chat processing."""
         try:
-            # Create the base chat model with GPT-5 and Responses API
-            # LangChain now supports GPT-5 with output_version="responses/v1"
+            # Create the base chat model with GPT-4o
             self.chat_model = ChatOpenAI(
-                model="gpt-5",
-                output_version="responses/v1",
-                max_output_tokens=500,
-                reasoning={"effort": "medium"},
-                text={"verbosity": "medium"},
+                model="gpt-4o",
+                temperature=0.7,
+                max_tokens=500,
                 api_key=settings.openai_api_key
             )
             
-            logger.info(f"🔧 GPT-5 MODEL CONFIGURED - Model: {self.chat_model.model_name}, Output version: {getattr(self.chat_model, 'output_version', 'default')}")
-            logger.info(f"🔧 GPT-5 PARAMETERS - Max output tokens: {getattr(self.chat_model, 'max_output_tokens', 'default')}")
+            logger.info(f"🔧 GPT-4O MODEL CONFIGURED - Model: {self.chat_model.model_name}")
+            logger.info(f"🔧 GPT-4O PARAMETERS - Temperature: 0.7, Max tokens: 500")
             
             # Create the prompt template with message history placeholder
             self.prompt = ChatPromptTemplate.from_messages([
@@ -539,7 +536,7 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
             
             # Get AI response using LangChain (this handles context and message saving automatically)
             try:
-                logger.info(f"🤖 GPT-5 API CALL STARTED - Session: {session_identifier}, Message: '{chat_request.message[:50]}...'")
+                logger.info(f"🤖 GPT-4O API CALL STARTED - Session: {session_identifier}, Message: '{chat_request.message[:50]}...'")
                 start_time = datetime.now()
                 
                 # Log the dynamic prompt being used
@@ -561,60 +558,24 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
                 end_time = datetime.now()
                 response_time = (end_time - start_time).total_seconds()
                 
-                # Handle GPT-5 Responses API format
-                # GPT-5 returns a list of response items with different types (reasoning, text, etc.)
-                # We extract only the 'text' type items for the user response
-                logger.info(f"🔍 GPT-5 RESPONSE FORMAT - Session: {session_identifier}, Content type: {type(response.content)}")
-                
-                if isinstance(response.content, list):
-                    # GPT-5 Responses API returns a list of response items
-                    logger.info(f"🔍 GPT-5 RESPONSE ITEMS - Session: {session_identifier}, Items count: {len(response.content)}")
-                    ai_message_content = ""
-                    
-                    for i, item in enumerate(response.content):
-                        logger.info(f"🔍 ITEM {i} - Type: {item.get('type')}, Keys: {list(item.keys())}")
-                        
-                        if item.get('type') == 'text':
-                            # Extract text content from GPT-5 response
-                            text_content = item.get('text', '')
-                            ai_message_content += text_content
-                            logger.info(f"📝 TEXT CONTENT - Length: {len(text_content)}")
-                        elif item.get('type') == 'reasoning':
-                            # Skip reasoning items - these are internal reasoning steps
-                            # We only want the final text response for the user
-                            logger.info(f"🧠 REASONING ITEM - Skipping reasoning content")
-                            continue
-                    
-                    # Debug: If no text content found in GPT-5 response
-                    if not ai_message_content:
-                        logger.error(f"❌ GPT-5 NO TEXT CONTENT - Session: {session_identifier}")
-                        logger.error(f"🔍 FULL GPT-5 RESPONSE - Session: {session_identifier}")
-                        for i, item in enumerate(response.content):
-                            logger.error(f"🔍 ITEM {i} DETAILS:")
-                            logger.error(f"   Type: {item.get('type')}")
-                            logger.error(f"   Keys: {list(item.keys())}")
-                            logger.error(f"   Content: {item}")
-                        
-                        # Use hardcoded fallback for now to see the issue
-                        ai_message_content = "I understand you're going through a difficult time. Can you tell me more about what specific symptoms or concerns you're experiencing right now?"
-                else:
-                    # Fallback: Handle older string format (shouldn't happen with GPT-5)
-                    logger.info(f"🔍 STRING CONTENT - Session: {session_identifier}, Length: {len(response.content)}")
-                    ai_message_content = response.content
+                # Handle GPT-4o response format (simple string content)
+                logger.info(f"🔍 GPT-4O RESPONSE FORMAT - Session: {session_identifier}, Content type: {type(response.content)}")
+                ai_message_content = response.content
+                logger.info(f"📝 GPT-4O RESPONSE - Session: {session_identifier}, Length: {len(ai_message_content)} chars")
                 
                 # Check if response is empty and provide fallback
                 if not ai_message_content or len(ai_message_content.strip()) == 0:
                     logger.warning(f"⚠️ EMPTY RESPONSE DETECTED - Session: {session_identifier}, Providing fallback response")
                     ai_message_content = "I understand you're going through a difficult time. Can you tell me more about what specific symptoms or concerns you're experiencing right now?"
                 
-                logger.info(f"✅ GPT-5 API SUCCESS - Session: {session_identifier}, Response time: {response_time:.2f}s, Response length: {len(ai_message_content)} chars")
+                logger.info(f"✅ GPT-4O API SUCCESS - Session: {session_identifier}, Response time: {response_time:.2f}s, Response length: {len(ai_message_content)} chars")
                 logger.info(f"📝 GPT Response: '{ai_message_content[:100]}...'")
                 
             except Exception as ai_error:
                 end_time = datetime.now()
                 response_time = (end_time - start_time).total_seconds()
                 
-                logger.error(f"❌ GPT-5 API ERROR - Session: {session_identifier}, Error: {ai_error}, Response time: {response_time:.2f}s")
+                logger.error(f"❌ GPT-4O API ERROR - Session: {session_identifier}, Error: {ai_error}, Response time: {response_time:.2f}s")
                 logger.error(f"🔍 Error type: {type(ai_error).__name__}")
                 logger.error(f"🔍 Error details: {str(ai_error)}")
                 
