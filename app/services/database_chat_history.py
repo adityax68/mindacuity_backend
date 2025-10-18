@@ -39,6 +39,21 @@ class DatabaseChatMessageHistory(BaseChatMessageHistory):
             role = "user" if isinstance(message, HumanMessage) else "assistant"
             content = message.content
             
+            # Handle GPT-5 Responses API format (list of response items)
+            if isinstance(content, list):
+                # Extract text content from GPT-5 response items
+                text_content = ""
+                for item in content:
+                    if item.get('type') == 'text':
+                        text_content += item.get('text', '')
+                
+                # If no text content found, use fallback
+                if not text_content:
+                    text_content = "I understand you're going through a difficult time. Can you tell me more about what specific symptoms or concerns you're experiencing right now?"
+                
+                content = text_content
+                logger.info(f"🔧 GPT-5 CONTENT CONVERTED - Session: {self.session_identifier}, Length: {len(content)}")
+            
             # Create and save message (no encryption)
             db_message = Message(
                 session_identifier=self.session_identifier,

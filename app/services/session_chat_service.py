@@ -307,6 +307,9 @@ DO NOT:
                 api_key=settings.openai_api_key
             )
             
+            logger.info(f"🔧 GPT-5 MODEL CONFIGURED - Model: {self.chat_model.model_name}, Output version: {getattr(self.chat_model, 'output_version', 'default')}")
+            logger.info(f"🔧 GPT-5 PARAMETERS - Max output tokens: {getattr(self.chat_model, 'max_output_tokens', 'default')}")
+            
             # Create the prompt template with message history placeholder
             self.prompt = ChatPromptTemplate.from_messages([
                 ("system", self.system_prompt),
@@ -537,6 +540,17 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
                 logger.info(f"🤖 GPT-5 API CALL STARTED - Session: {session_identifier}, Message: '{chat_request.message[:50]}...'")
                 start_time = datetime.now()
                 
+                # Log the dynamic prompt being used
+                dynamic_prompt = self._build_enhanced_prompt(
+                    message_count=session_state.get('message_count', 0),
+                    greeting_sent=session_state.get('greeting_sent', False),
+                    gpt_response_count=session_state.get('gpt_response_count', 0),
+                    user_concerns=session_state.get('user_concerns', '')
+                )
+                logger.info(f"🔧 DYNAMIC PROMPT LENGTH - Session: {session_identifier}, Length: {len(dynamic_prompt)} chars")
+                logger.info(f"🔧 SESSION STATE - Session: {session_identifier}, State: {session_state}")
+                logger.info(f"🔧 DYNAMIC PROMPT PREVIEW - Session: {session_identifier}, First 200 chars: {dynamic_prompt[:200]}...")
+                
                 response = await runnable_with_history.ainvoke(
                     {"input": chat_request.message},
                     config={"configurable": {"session_id": session_identifier}}
@@ -569,9 +583,17 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
                             logger.info(f"🧠 REASONING ITEM - Skipping reasoning content")
                             continue
                     
-                    # Fallback: If no text content found in GPT-5 response
+                    # Debug: If no text content found in GPT-5 response
                     if not ai_message_content:
-                        logger.warning(f"⚠️ NO TEXT CONTENT FOUND - Session: {session_identifier}, Using fallback")
+                        logger.error(f"❌ GPT-5 NO TEXT CONTENT - Session: {session_identifier}")
+                        logger.error(f"🔍 FULL GPT-5 RESPONSE - Session: {session_identifier}")
+                        for i, item in enumerate(response.content):
+                            logger.error(f"🔍 ITEM {i} DETAILS:")
+                            logger.error(f"   Type: {item.get('type')}")
+                            logger.error(f"   Keys: {list(item.keys())}")
+                            logger.error(f"   Content: {item}")
+                        
+                        # Use hardcoded fallback for now to see the issue
                         ai_message_content = "I understand you're going through a difficult time. Can you tell me more about what specific symptoms or concerns you're experiencing right now?"
                 else:
                     # Fallback: Handle older string format (shouldn't happen with GPT-5)
