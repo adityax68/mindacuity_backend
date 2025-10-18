@@ -298,11 +298,12 @@ DO NOT:
     def _setup_langchain_components(self):
         """Setup LangChain components for chat processing."""
         try:
-            # Create the base chat model
+            # Create the base chat model with GPT-5 and Responses API
+            # LangChain now supports GPT-5 with output_version="responses/v1"
             self.chat_model = ChatOpenAI(
                 model="gpt-5",
-                temperature=0.7,
-                max_tokens=500,
+                output_version="responses/v1",
+                max_output_tokens=300,
                 api_key=settings.openai_api_key
             )
             
@@ -360,6 +361,7 @@ DO NOT:
             'gpt_response_count': gpt_response_count,
             'user_concerns': user_concerns
         }
+
 
     def _build_enhanced_prompt(self, message_count: int, greeting_sent: bool, gpt_response_count: int, user_concerns: str = ""):
         """Build dynamic prompt with session state variables"""
@@ -532,7 +534,7 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
             
             # Get AI response using LangChain (this handles context and message saving automatically)
             try:
-                logger.info(f"🤖 GPT API CALL STARTED - Session: {session_identifier}, Message: '{chat_request.message[:50]}...'")
+                logger.info(f"🤖 GPT-5 API CALL STARTED - Session: {session_identifier}, Message: '{chat_request.message[:50]}...'")
                 start_time = datetime.now()
                 
                 response = await runnable_with_history.ainvoke(
@@ -545,14 +547,19 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
                 
                 ai_message_content = response.content
                 
-                logger.info(f"✅ GPT API SUCCESS - Session: {session_identifier}, Response time: {response_time:.2f}s, Response length: {len(ai_message_content)} chars")
+                # Check if response is empty and provide fallback
+                if not ai_message_content or len(ai_message_content.strip()) == 0:
+                    logger.warning(f"⚠️ EMPTY RESPONSE DETECTED - Session: {session_identifier}, Providing fallback response")
+                    ai_message_content = "I understand you're going through a difficult time. Can you tell me more about what specific symptoms or concerns you're experiencing right now?"
+                
+                logger.info(f"✅ GPT-5 API SUCCESS - Session: {session_identifier}, Response time: {response_time:.2f}s, Response length: {len(ai_message_content)} chars")
                 logger.info(f"📝 GPT Response: '{ai_message_content[:100]}...'")
                 
             except Exception as ai_error:
                 end_time = datetime.now()
                 response_time = (end_time - start_time).total_seconds()
                 
-                logger.error(f"❌ GPT API ERROR - Session: {session_identifier}, Error: {ai_error}, Response time: {response_time:.2f}s")
+                logger.error(f"❌ GPT-5 API ERROR - Session: {session_identifier}, Error: {ai_error}, Response time: {response_time:.2f}s")
                 logger.error(f"🔍 Error type: {type(ai_error).__name__}")
                 logger.error(f"🔍 Error details: {str(ai_error)}")
                 
