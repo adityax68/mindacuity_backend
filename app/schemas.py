@@ -270,6 +270,7 @@ class SessionChatResponse(BaseModel):
     message: str
     conversation_id: str  # session_identifier
     requires_subscription: bool = False
+    requires_assessment: bool = False
     messages_used: int = 0
     message_limit: Optional[int] = None
     plan_type: str = "free"

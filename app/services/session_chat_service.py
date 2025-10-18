@@ -482,6 +482,17 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
             logger.info(f"📊 SESSION STATE - Session: {session_identifier}, Messages: {session_state['message_count']}, GPT Responses: {session_state['gpt_response_count']}, Greeting Sent: {session_state['greeting_sent']}")
             logger.info(f"📊 USAGE INFO - Can Send: {usage_info['can_send']}, Used: {usage_info['messages_used']}, Limit: {usage_info['message_limit']}, Plan: {usage_info['plan_type']}")
             
+            # Check if session has reached 12 messages (assessment limit)
+            if session_state['message_count'] >= 12:
+                return SessionChatResponse(
+                    message="Assessment limit reached. Please generate your assessment to continue.",
+                    conversation_id=session_identifier,
+                    requires_assessment=True,
+                    messages_used=usage_info["messages_used"],
+                    message_limit=usage_info["message_limit"],
+                    plan_type=usage_info["plan_type"]
+                )
+            
             if not usage_info["can_send"]:
                 if usage_info.get("plan_type") == "free" and usage_info["messages_used"] >= usage_info["message_limit"]:
                     return SessionChatResponse(

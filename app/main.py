@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database import engine
 from app.models import Base
-from app.routers import auth, clinical, admin, access, hr, complaints, tests, session_chat, researches, email, email_verification
+from app.routers import auth, clinical, admin, access, hr, complaints, tests, session_chat, researches, email, email_verification, assessment
 
 # Create database tables done
 Base.metadata.create_all(bind=engine)
@@ -151,6 +151,7 @@ app.include_router(tests.router, prefix=settings.api_v1_prefix)
 app.include_router(researches.router, prefix=settings.api_v1_prefix)
 app.include_router(email.router, prefix=settings.api_v1_prefix)
 app.include_router(email_verification.router, prefix=settings.api_v1_prefix)
+app.include_router(assessment.router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/")

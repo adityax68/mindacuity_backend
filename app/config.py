@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # OpenAI Configuration
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     
+    # Anthropic Configuration
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    
     # Encryption Configuration
     encryption_key: str = os.getenv("ENCRYPTION_KEY", "")
     
