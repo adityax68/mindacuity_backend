@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text, Float, Boolean, JSON, ForeignKey, Table, Numeric
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+from datetime import datetime
 from app.database import Base
 
 # Many-to-many relationship for user privileges
