@@ -12,7 +12,10 @@ class AssessmentService:
     """Service for generating mental health assessments using Claude"""
     
     def __init__(self):
-        self.claude_client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        self.claude_client = anthropic.Anthropic(
+            api_key=settings.anthropic_api_key,
+            default_headers={"anthropic-version": "2023-06-01"}
+        )
     
     def generate_assessment(self, db: Session, session_identifier: str, user_email: str) -> Dict[str, Any]:
         """Generate mental health assessment using Claude Sonnet 4.5"""
@@ -25,7 +28,7 @@ class AssessmentService:
             
             # Call Claude API
             response = self.claude_client.messages.create(
-                model="claude-sonnet-4-5@20250929",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=2000,
                 temperature=0.3,
                 messages=[
@@ -37,7 +40,9 @@ class AssessmentService:
             )
             
             # Parse Claude response
-            assessment_result = self._parse_claude_response(response.content[0].text)
+            # Claude Sonnet 4.5 returns content in response.content[0].text
+            claude_text = response.content[0].text if response.content else ""
+            assessment_result = self._parse_claude_response(claude_text)
             
             # Save assessment to database
             self._save_assessment(db, session_identifier, user_email, assessment_result)
