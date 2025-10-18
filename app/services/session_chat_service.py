@@ -545,7 +545,38 @@ Remember: You are Dr. Acuity, a senior psychologist with 30+ years of experience
                 end_time = datetime.now()
                 response_time = (end_time - start_time).total_seconds()
                 
-                ai_message_content = response.content
+                # Handle GPT-5 Responses API format
+                # GPT-5 returns a list of response items with different types (reasoning, text, etc.)
+                # We extract only the 'text' type items for the user response
+                logger.info(f"🔍 GPT-5 RESPONSE FORMAT - Session: {session_identifier}, Content type: {type(response.content)}")
+                
+                if isinstance(response.content, list):
+                    # GPT-5 Responses API returns a list of response items
+                    logger.info(f"🔍 GPT-5 RESPONSE ITEMS - Session: {session_identifier}, Items count: {len(response.content)}")
+                    ai_message_content = ""
+                    
+                    for i, item in enumerate(response.content):
+                        logger.info(f"🔍 ITEM {i} - Type: {item.get('type')}, Keys: {list(item.keys())}")
+                        
+                        if item.get('type') == 'text':
+                            # Extract text content from GPT-5 response
+                            text_content = item.get('text', '')
+                            ai_message_content += text_content
+                            logger.info(f"📝 TEXT CONTENT - Length: {len(text_content)}")
+                        elif item.get('type') == 'reasoning':
+                            # Skip reasoning items - these are internal reasoning steps
+                            # We only want the final text response for the user
+                            logger.info(f"🧠 REASONING ITEM - Skipping reasoning content")
+                            continue
+                    
+                    # Fallback: If no text content found in GPT-5 response
+                    if not ai_message_content:
+                        logger.warning(f"⚠️ NO TEXT CONTENT FOUND - Session: {session_identifier}, Using fallback")
+                        ai_message_content = "I understand you're going through a difficult time. Can you tell me more about what specific symptoms or concerns you're experiencing right now?"
+                else:
+                    # Fallback: Handle older string format (shouldn't happen with GPT-5)
+                    logger.info(f"🔍 STRING CONTENT - Session: {session_identifier}, Length: {len(response.content)}")
+                    ai_message_content = response.content
                 
                 # Check if response is empty and provide fallback
                 if not ai_message_content or len(ai_message_content.strip()) == 0:
