@@ -3,7 +3,7 @@ import logging
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from app.models import BotAssessment, Message
-from app.core.config import settings
+from app.config import settings
 import anthropic
 
 logger = logging.getLogger(__name__)
