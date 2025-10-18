@@ -303,7 +303,9 @@ DO NOT:
             self.chat_model = ChatOpenAI(
                 model="gpt-5",
                 output_version="responses/v1",
-                max_output_tokens=300,
+                max_output_tokens=500,
+                reasoning_effort="medium",
+                text_verbosity="medium",
                 api_key=settings.openai_api_key
             )
             
