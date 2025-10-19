@@ -75,6 +75,13 @@ async def get_assessment_history(
         
         assessment_list = []
         for assessment in assessments:
+            # Parse the full assessment data
+            import json
+            try:
+                full_assessment_data = json.loads(assessment.assessment_data) if assessment.assessment_data else {}
+            except:
+                full_assessment_data = {}
+            
             assessment_list.append({
                 "id": assessment.id,
                 "session_identifier": assessment.session_identifier,
@@ -82,7 +89,9 @@ async def get_assessment_history(
                 "is_critical": assessment.is_critical,
                 "assessment_summary": assessment.assessment_summary,
                 "mental_conditions": assessment.mental_conditions,
-                "severity_levels": assessment.severity_levels
+                "severity_levels": assessment.severity_levels,
+                # Include the full assessment data with all metadata
+                "assessment_data": full_assessment_data
             })
         
         return {
