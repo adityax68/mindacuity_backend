@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class SubscriptionService:
     def __init__(self):
         self.free_plan_limit = 5
-        self.basic_plan_limit = 10
+        self.basic_plan_limit = 15
         self.premium_plan_limit = 20  # 20 messages
     
     def generate_session_identifier(self) -> str:
