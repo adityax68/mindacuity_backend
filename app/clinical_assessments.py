@@ -38,26 +38,26 @@ class ClinicalAssessmentEngine:
     def __init__(self):
         # PHQ-9 Questions for Depression
         self.phq9_questions = [
-            "Little interest or pleasure in doing things",
-            "Feeling down, depressed, or hopeless",
-            "Trouble falling or staying asleep, or sleeping too much",
-            "Feeling tired or having little energy",
-            "Poor appetite or overeating",
-            "Feeling bad about yourself - or that you are a failure or have let yourself or your family down",
-            "Trouble concentrating on things, such as reading the newspaper or watching television",
-            "Moving or speaking slowly enough that other people could have noticed. Or the opposite - being so fidgety or restless that you have been moving around a lot more than usual",
-            "Thoughts that you would be better off dead or of hurting yourself in some way"
+            "Over the last 2 weeks, how often have you had little interest or pleasure in doing things?",
+            "Over the last 2 weeks, how often have you felt down, depressed, or hopeless?",
+            "Over the last 2 weeks, how often have you had trouble falling or staying asleep, or sleeping too much?",
+            "Over the last 2 weeks, how often have you felt tired or had little energy?",
+            "Over the last 2 weeks, how often have you had a poor appetite or overeating?",
+            "Over the last 2 weeks, how often have you felt bad about yourself - or that you are a failure or have let yourself or your family down?",
+            "Over the last 2 weeks, how often have you had trouble concentrating on things, such as reading the newspaper or watching television?",
+            "Over the last 2 weeks, how often have you been moving or speaking slowly enough that other people could have noticed. Or the opposite - being so fidgety or restless that you have been moving around a lot more than usual?",
+            "Over the last 2 weeks, how often have you had thoughts that you would be better off dead or of hurting yourself in some way?"
         ]
         
         # GAD-7 Questions for Anxiety
         self.gad7_questions = [
-            "Feeling nervous, anxious, or on edge",
-            "Not being able to stop or control worrying",
-            "Worrying too much about different things",
-            "Trouble relaxing",
-            "Being so restless that it's hard to sit still",
-            "Becoming easily annoyed or irritable",
-            "Feeling afraid as if something awful might happen"
+            "Over the last 2 weeks, how often have you felt nervous, anxious, or on edge?",
+            "Over the last 2 weeks, how often have you not been able to stop or control worrying?",
+            "Over the last 2 weeks, how often have you worried too much about different things?",
+            "Over the last 2 weeks, how often have you had trouble relaxing?",
+            "Over the last 2 weeks, how often have you been so restless that it's hard to sit still?",
+            "Over the last 2 weeks, how often have you become easily annoyed or irritable?",
+            "Over the last 2 weeks, how often have you felt afraid as if something awful might happen?"
         ]
         
         # PSS-10 Questions for Stress
