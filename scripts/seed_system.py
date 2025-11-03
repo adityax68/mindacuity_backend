@@ -41,8 +41,17 @@ class SeedSystem:
             # Check if test definitions already exist
             existing_tests = self.db.query(TestDefinition).count()
             if existing_tests > 0:
-                print(f"  ℹ️  {existing_tests} test definitions already exist. Skipping...")
-                return True
+                # Check if questions exist for any test definition
+                from app.models import TestQuestion
+                existing_questions = self.db.query(TestQuestion).count()
+                if existing_questions > 0:
+                    print(f"  ℹ️  {existing_tests} test definitions and {existing_questions} questions already exist. Skipping...")
+                    return True
+                else:
+                    print(f"  ℹ️  {existing_tests} test definitions exist but no questions found. Will recreate questions, options, and scoring ranges...")
+                    # Delete existing test definitions to recreate everything fresh
+                    self.db.query(TestDefinition).delete()
+                    self.db.flush()
             
             # Create PHQ-9 test definition
             phq9 = TestDefinition(
