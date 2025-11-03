@@ -40,30 +40,29 @@ class SeedSystem:
             
             # Check if test definitions already exist
             existing_tests = self.db.query(TestDefinition).count()
-            if existing_tests > 0:
-                # Check if questions exist for any test definition
-                from app.models import TestQuestion
-                existing_questions = self.db.query(TestQuestion).count()
-                if existing_questions > 0:
-                    print(f"  ℹ️  {existing_tests} test definitions and {existing_questions} questions already exist. Skipping...")
-                    return True
-                else:
-                    print(f"  ℹ️  {existing_tests} test definitions exist but no questions found. Will recreate questions, options, and scoring ranges...")
-                    # Delete existing test definitions to recreate everything fresh
-                    self.db.query(TestDefinition).delete()
-                    self.db.flush()
+            from app.models import TestQuestion
+            existing_questions = self.db.query(TestQuestion).count()
             
-            # Create PHQ-9 test definition
-            phq9 = TestDefinition(
-                test_code="phq9",
-                test_name="PHQ-9",
-                test_category="depression",
-                description="Patient Health Questionnaire-9: A validated tool for assessing depression severity",
-                total_questions=9,
-                is_active=True
-            )
-            self.db.add(phq9)
-            self.db.flush()  # Get the ID
+            if existing_tests > 0 and existing_questions > 0:
+                print(f"  ℹ️  {existing_tests} test definitions and {existing_questions} questions already exist. Skipping...")
+                return True
+            
+            # Get or create PHQ-9 test definition
+            phq9 = self.db.query(TestDefinition).filter(TestDefinition.test_code == "phq9").first()
+            if not phq9:
+                print("  📝 Creating PHQ-9 test definition...")
+                phq9 = TestDefinition(
+                    test_code="phq9",
+                    test_name="PHQ-9",
+                    test_category="depression",
+                    description="Patient Health Questionnaire-9: A validated tool for assessing depression severity",
+                    total_questions=9,
+                    is_active=True
+                )
+                self.db.add(phq9)
+                self.db.flush()
+            else:
+                print(f"  ✅ Using existing PHQ-9 test definition (ID: {phq9.id})...")
             
             # PHQ-9 Questions
             phq9_questions = [
@@ -77,6 +76,14 @@ class SeedSystem:
                 "Over the last 2 weeks, how often have you been moving or speaking slowly enough that other people could have noticed. Or the opposite - being so fidgety or restless that you have been moving around a lot more than usual?",
                 "Over the last 2 weeks, how often have you had thoughts that you would be better off dead or of hurting yourself in some way?"
             ]
+            
+            # Check if PHQ-9 questions already exist
+            existing_phq9_questions = self.db.query(TestQuestion).filter(
+                TestQuestion.test_definition_id == phq9.id
+            ).count()
+            
+            if existing_phq9_questions == 0:
+                print(f"  📝 Creating {len(phq9_questions)} PHQ-9 questions...")
             
             for i, question_text in enumerate(phq9_questions, 1):
                 question = TestQuestion(
@@ -116,6 +123,14 @@ class SeedSystem:
                 (20, 27, "severe", "Severe Depression", "Immediate treatment, medication and therapy", "Urgent professional intervention", "#991B1B", 5)
             ]
             
+            from app.models import TestScoringRange
+            existing_phq9_ranges = self.db.query(TestScoringRange).filter(
+                TestScoringRange.test_definition_id == phq9.id
+            ).count()
+            
+            if existing_phq9_ranges == 0:
+                print(f"  📝 Creating {len(phq9_ranges)} PHQ-9 scoring ranges...")
+            
             for min_score, max_score, severity_level, severity_label, interpretation, recommendations, color_code, priority in phq9_ranges:
                 range_obj = TestScoringRange(
                     test_definition_id=phq9.id,
@@ -130,17 +145,22 @@ class SeedSystem:
                 )
                 self.db.add(range_obj)
             
-            # Create GAD-7 test definition
-            gad7 = TestDefinition(
-                test_code="gad7",
-                test_name="GAD-7",
-                test_category="anxiety",
-                description="Generalized Anxiety Disorder-7: A validated tool for assessing anxiety severity",
-                total_questions=7,
-                is_active=True
-            )
-            self.db.add(gad7)
-            self.db.flush()
+            # Get or create GAD-7 test definition
+            gad7 = self.db.query(TestDefinition).filter(TestDefinition.test_code == "gad7").first()
+            if not gad7:
+                print("  📝 Creating GAD-7 test definition...")
+                gad7 = TestDefinition(
+                    test_code="gad7",
+                    test_name="GAD-7",
+                    test_category="anxiety",
+                    description="Generalized Anxiety Disorder-7: A validated tool for assessing anxiety severity",
+                    total_questions=7,
+                    is_active=True
+                )
+                self.db.add(gad7)
+                self.db.flush()
+            else:
+                print(f"  ✅ Using existing GAD-7 test definition (ID: {gad7.id})...")
             
             # GAD-7 Questions
             gad7_questions = [
@@ -152,6 +172,13 @@ class SeedSystem:
                 "Over the last 2 weeks, how often have you become easily annoyed or irritable?",
                 "Over the last 2 weeks, how often have you felt afraid as if something awful might happen?"
             ]
+            
+            existing_gad7_questions = self.db.query(TestQuestion).filter(
+                TestQuestion.test_definition_id == gad7.id
+            ).count()
+            
+            if existing_gad7_questions == 0:
+                print(f"  📝 Creating {len(gad7_questions)} GAD-7 questions...")
             
             for i, question_text in enumerate(gad7_questions, 1):
                 question = TestQuestion(
@@ -190,6 +217,13 @@ class SeedSystem:
                 (15, 21, "severe", "Severe Anxiety", "Active treatment with medication and/or therapy", "Immediate professional consultation", "#DC2626", 4)
             ]
             
+            existing_gad7_ranges = self.db.query(TestScoringRange).filter(
+                TestScoringRange.test_definition_id == gad7.id
+            ).count()
+            
+            if existing_gad7_ranges == 0:
+                print(f"  📝 Creating {len(gad7_ranges)} GAD-7 scoring ranges...")
+            
             for min_score, max_score, severity_level, severity_label, interpretation, recommendations, color_code, priority in gad7_ranges:
                 range_obj = TestScoringRange(
                     test_definition_id=gad7.id,
@@ -204,17 +238,22 @@ class SeedSystem:
                 )
                 self.db.add(range_obj)
             
-            # Create PSS-10 test definition
-            pss10 = TestDefinition(
-                test_code="pss10",
-                test_name="PSS-10",
-                test_category="stress",
-                description="Perceived Stress Scale-10: A validated tool for assessing stress levels",
-                total_questions=10,
-                is_active=True
-            )
-            self.db.add(pss10)
-            self.db.flush()
+            # Get or create PSS-10 test definition
+            pss10 = self.db.query(TestDefinition).filter(TestDefinition.test_code == "pss10").first()
+            if not pss10:
+                print("  📝 Creating PSS-10 test definition...")
+                pss10 = TestDefinition(
+                    test_code="pss10",
+                    test_name="PSS-10",
+                    test_category="stress",
+                    description="Perceived Stress Scale-10: A validated tool for assessing stress levels",
+                    total_questions=10,
+                    is_active=True
+                )
+                self.db.add(pss10)
+                self.db.flush()
+            else:
+                print(f"  ✅ Using existing PSS-10 test definition (ID: {pss10.id})...")
             
             # PSS-10 Questions
             pss10_questions = [
@@ -232,6 +271,13 @@ class SeedSystem:
             
             # PSS-10 reverse scoring questions (4, 5, 7, 8)
             reverse_scored = [False, False, False, True, True, False, True, True, False, False]
+            
+            existing_pss10_questions = self.db.query(TestQuestion).filter(
+                TestQuestion.test_definition_id == pss10.id
+            ).count()
+            
+            if existing_pss10_questions == 0:
+                print(f"  📝 Creating {len(pss10_questions)} PSS-10 questions...")
             
             for i, (question_text, is_reverse) in enumerate(zip(pss10_questions, reverse_scored), 1):
                 question = TestQuestion(
@@ -269,6 +315,13 @@ class SeedSystem:
                 (14, 26, "moderate", "Moderate Stress", "Consider stress management techniques", "Learn and practice stress management techniques", "#F59E0B", 2),
                 (27, 40, "high", "High Stress", "Consider professional help for stress management", "Seek professional help for stress management", "#EF4444", 3)
             ]
+            
+            existing_pss10_ranges = self.db.query(TestScoringRange).filter(
+                TestScoringRange.test_definition_id == pss10.id
+            ).count()
+            
+            if existing_pss10_ranges == 0:
+                print(f"  📝 Creating {len(pss10_ranges)} PSS-10 scoring ranges...")
             
             for min_score, max_score, severity_level, severity_label, interpretation, recommendations, color_code, priority in pss10_ranges:
                 range_obj = TestScoringRange(

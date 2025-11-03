@@ -2,7 +2,7 @@
 
 ## 🎯 Overview
 
-This implementation allows logged-in users to generate a **one-time free basic access code** (10 messages) instead of automatically receiving a free plan. The button shows once, and after generation, displays the access code permanently.
+This implementation allows logged-in users to generate a **one-time free basic access code** (15 messages) instead of automatically receiving a free plan. The button shows once, and after generation, displays the access code permanently.
 
 ---
 
@@ -321,7 +321,7 @@ curl -X POST http://localhost:8000/api/session-chat/generate-free-access \
 5. User copies code
 6. User validates code → Gets subscription_token
 7. User links session to subscription
-8. User can chat (10 messages)
+8. User can chat (15 messages)
 ```
 
 ---
@@ -342,7 +342,7 @@ alembic downgrade -1
 
 ## 📝 Notes
 
-1. **Basic Plan:** 10 messages, expires in 30 days
+1. **Basic Plan:** 15 messages, expires in 30 days
 2. **User ID Unique:** One free access per user (enforced by database)
 3. **No Auto Free Plans:** Old automatic free plan creation removed
 4. **Subscription Reusable:** Access code can be used on multiple devices
@@ -365,7 +365,7 @@ alembic downgrade -1
 Your implementation is complete. Users can now:
 - ✅ Generate one-time free basic access codes
 - ✅ See their code instead of a button after generation
-- ✅ Use the code to chat (10 messages, 30 days validity)
+- ✅ Use the code to chat (15 messages, 30 days validity)
 - ✅ Cannot abuse the system (one per user)
 
 **Next Steps:**
